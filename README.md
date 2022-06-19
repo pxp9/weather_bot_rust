@@ -5,7 +5,7 @@
 
 
 
-# WeatherBot
+# Weather_bot_Rust
 
 This bot gives you weather info about any city in the world !
 
