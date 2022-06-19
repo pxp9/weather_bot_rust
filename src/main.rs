@@ -1,12 +1,23 @@
 mod json_parse;
 use crate::json_parse::*;
-use serde_json::Value;
-
 use futures::stream::StreamExt;
+use std::collections::HashMap;
 use std::env;
 use telegram_bot::Error;
 use telegram_bot::*;
-
+/*const ARTICLES: [&str; 5] = [&"Al", &"Del", &"Do", &"De", &"El"];
+descomentar si se quiere hacer la comprobacion de la otra forma
+fn is_article(word: &str) -> bool {
+    let mut iter = ARTICLES.iter();
+    let mut itis: bool = false;
+    while let Some(art) = iter.next() {
+        if &word == art {
+            itis = true;
+            break;
+        }
+    }
+    itis
+}*/
 // only use if response is Text
 async fn get_message_data(update: Update) -> Result<(Message, String), ()> {
     if let UpdateKind::Message(message2) = update.kind {
@@ -21,16 +32,16 @@ async fn city(
     api: &Api,
     message: Message,
     stream: &mut UpdatesStream,
-    cities: &Vec<Value>,
+    cities: &HashMap<(String, String), (f64, f64, String, String)>,
 ) -> Result<(), Error> {
     let user = match message.from.username.as_ref() {
-        Some(username) => username.clone(),
+        Some(username) => format!("@{}", username.clone()),
         None => message.from.first_name.clone(),
     };
     api.send(
         message
             .text_reply(format!(
-                "Hi, @{}! Write city and country acronym like this Madrid,ES",
+                "Hi, {}! Write city and country acronym like this Madrid,ES",
                 user
             ))
             .parse_mode(ParseMode::Markdown),
@@ -43,17 +54,44 @@ async fn city(
             .await
             .expect("lo llamaste con algo que no era texto");
         let v: Vec<&str> = data.split(",").collect();
-        let city = v[0];
-        let country = v[1];
-        let (lon, lat) =
+        if v.len() < 2 {
+            api.send(
+                message
+                    .text_reply(format!(
+                        "Hi, {}! Write it in the correct format please {}",
+                        user, data
+                    ))
+                    .parse_mode(ParseMode::Markdown),
+            )
+            .await?;
+            return Ok(());
+        }
+        let city = v[0].trim();
+        /*.split(" ")
+        .collect::<Vec<&str>>()
+        .iter()
+        .map(|word| word[0..1].to_uppercase() + &word[1..].to_lowercase())
+        .map(|word| {
+            if is_article(&word) {
+                word.to_lowercase()
+            } else {
+                word
+            }
+        })
+        .collect::<Vec<String>>()
+        .join(" ");*/
+        //let city = city[0..1].to_uppercase() + &city[1..];
+        let country = v[1].trim();
+        let (lon, lat, city_fmt, country_fmt) =
             match search_city((*city).to_string(), (*country).to_string(), cities).await {
-                Ok((lon, lat)) => (lon, lat),
-                Err(_) => (-181.0, -91.0),
+                Ok((lon, lat, city_fmt, country_fmt)) => (lon, lat, city_fmt, country_fmt),
+                Err(_) => (-181.0, -91.0, String::from(""), String::from("")),
             };
         if lat == -91.0 {
+            println!("User {} ,  City {} not found", user, city);
             api.send(
                 message2
-                    .text_reply(format!("User @{} ,  City {} not found", user, city))
+                    .text_reply(format!("User {} ,  City {} not found", user, city))
                     .parse_mode(ParseMode::Markdown),
             )
             .await?;
@@ -70,17 +108,22 @@ async fn city(
         );
             let response = reqwest::get(&request_url).unwrap().text().unwrap();
             let weather_info = parse_weather(response).await.unwrap();
+            println!(
+                "User {} ,  City {} , Country {}\nLon {} , Lat {} {}",
+                user, city_fmt, country_fmt, lon, lat, weather_info
+            );
             api.send(
                 message2
                     .text_reply(format!(
-                        "User @{} ,  City {} , Country {} , Lon {} , Lat {}  Weather {}",
-                        user, city, country, lon, lat, weather_info,
+                        "User {} ,  City {} , Country {}\nLon {} , Lat {}{}",
+                        user, city_fmt, country_fmt, lon, lat, weather_info,
                     ))
                     .parse_mode(ParseMode::Markdown),
             )
             .await?;
         }
     }
+
     Ok(())
 }
 #[tokio::main]
