@@ -42,7 +42,7 @@ You will need to create 2 enviroment variables in linux is in this file */etc/en
 - RUST_TELEGRAM_BOT_TOKEN=TOKEN OF THE BOT
 - OPEN_WEATHER_MAP_API_TOKEN=TOKEN OF THE API
 
-Maybe you need to reboot and then or source */etc/environment* file
+Maybe you need to reboot or source */etc/environment* file and then
 
 Run in command line : *cargo run*
 
