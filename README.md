@@ -43,7 +43,7 @@ https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
 - openssl = "0.10.38"
 
 ## Run the bot
-### Setup Postgres Database with *setup.sql* file in [![resources]](https://github.com/pxp9/weather_bot_rust/tree/master/resources)
+### Setup Postgres Database with *setup.sql* file in [resources](https://github.com/pxp9/weather_bot_rust/tree/master/resources)
 
 ### You will need to create 2 enviroment variables in linux is in this file */etc/environment*
 
