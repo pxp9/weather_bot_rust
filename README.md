@@ -43,18 +43,18 @@ https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
 - openssl = "0.10.38"
 
 ## Run the bot
-#Setup Postgres Database with *setup.sql* file in resources
+# Setup Postgres Database with *setup.sql* file in resources
 
 
-#You will need to create 2 enviroment variables in linux is in this file */etc/environment*
+# You will need to create 2 enviroment variables in linux is in this file */etc/environment*
 
 - RUST_TELEGRAM_BOT_TOKEN=TOKEN OF THE BOT
 - OPEN_WEATHER_MAP_API_TOKEN=TOKEN OF THE API
 
-Maybe you need to reboot or source */etc/environment* file 
+# Maybe you need to reboot or source */etc/environment* file 
 
-#Also you need to setup a key.pem file that contains a private key in order to encrypt data in the db
-#and move the file to resources.
+# Also you need to setup a key.pem file that contains a private key in order to encrypt data in the db
+# and move the file to resources.
 ```
 $ openssl genrsa -out key.pem 2048
 $ mv key.pem resources
