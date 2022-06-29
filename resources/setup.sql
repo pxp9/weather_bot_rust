@@ -14,9 +14,9 @@ CREATE TABLE IF NOT EXISTS chat (
 -- SELECT name , country , state , lon , lat FROM chat WHERE UPPER(name) = UPPER('Madrid') AND UPPER(country) = UPPER('ES') 
 -- AND UPPER(state) = UPPER('') ;
 CREATE TABLE IF NOT EXISTS cities (
-  name VARCHAR(50),
-  country VARCHAR(50),
-  state VARCHAR(50),
+  name VARCHAR(80),
+  country VARCHAR(80),
+  state VARCHAR(80),
   lon DOUBLE PRECISION, 
   lat DOUBLE PRECISION,
   PRIMARY KEY (name, country , state)
