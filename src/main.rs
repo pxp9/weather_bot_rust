@@ -42,6 +42,30 @@ fn parse_string(bad: String) -> String {
             '-' => {
                 parsed.push_str("\\-");
             }
+            '=' => {
+                parsed.push_str("\\=");
+            }
+            '#' => {
+                parsed.push_str("\\#");
+            }
+            '*' => {
+                parsed.push_str("\\*");
+            }
+            '(' => {
+                parsed.push_str("\\(");
+            }
+            ')' => {
+                parsed.push_str("\\)");
+            }
+            '+' => {
+                parsed.push_str("\\+");
+            }
+            '}' => {
+                parsed.push_str("\\}");
+            }
+            '{' => {
+                parsed.push_str("\\{");
+            }
             _ => {
                 let mut b = [0; 4];
                 parsed.push_str(c.encode_utf8(&mut b))
@@ -114,11 +138,11 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
     };
     if lat == -91.0 {
         println!("User {} ,  City {} not found", conf.username, city);
-        let text = format!(
-            "Hi, {}\\! Your city {} was not found",
+        let text = parse_string(format!(
+            "Hi, {}! Your city {} was not found",
             conf.username,
             conf.message.text.as_ref().unwrap()
-        );
+        ));
         send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
 
         return Ok(());
