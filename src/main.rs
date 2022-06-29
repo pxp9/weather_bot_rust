@@ -18,10 +18,14 @@ use tokio::runtime;
 use tokio_postgres::NoTls;
 async fn start(conf: Conf<'_>) -> Result<(), Error> {
     // Write a message xd
-    let text = format!(
-        "Hi, {}\\! Write it in the correct format please like this Madrid,ES or New York,US,NY",
+    let text = parse_string(format!(
+        "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n/city\n
+The bot is going to ask a city in a specific format, finally the bot will provide the weather info.\n
+It would be really greatful if you take a look my GitHub, look how much work has this bot, if you like this bot give me
+an star or if you would like to self run it, fork the proyect please.\n
+[RustWeatherBot repo](https://github.com/pxp9/weather_bot_rust)",
         conf.username
-    );
+    ));
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
@@ -133,12 +137,12 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
     );
     let text = match n {
         2 => parse_string(format!(
-            "User {},City {},Country {}\nLon {} , Lat {}\n{}",
+            "Hi {},\n{},{}\nLon {} , Lat {}\n{}",
             conf.username, city_fmt, country_fmt, lon, lat, weather_info,
         )),
         3 => parse_string(format!(
-            "User {},City {},State {},Country {}\nLon {}  Lat {}\n{}",
-            conf.username, city_fmt, state_fmt, country_fmt, lon, lat, weather_info,
+            "Hi {},\n{},{},{}\nLon {}  Lat {}\n{}",
+            conf.username, city_fmt, country_fmt, state_fmt, lon, lat, weather_info,
         )),
         _ => panic!("wtf is this ?"),
     };
@@ -147,7 +151,7 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
 }
 async fn city(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
-        "Hi, {}\\! Write city and country acronym like this:\n Madrid,ES\nor for US states specify like this:\n New York,US,NY being city,country,state",
+        "Hi, {}\\! Write city and country acronym like this:\nMadrid,ES\nor for US states specify like this:\nNew York,US,NY being city,country,state",
         conf.username
     );
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
@@ -295,7 +299,9 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     };
     match state.as_str() {
         "IN" => match pm.message.text.as_deref() {
-            Some("/start") => {}
+            Some("/start") => {
+                start(conf).await?;
+            }
             Some("/city") => {
                 city(conf).await?;
                 modify_state(&mut transaction, &chat_id, String::from("AC"))
@@ -305,6 +311,12 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             _ => {}
         },
         "AC" => match pm.message.text.as_deref() {
+            Some("/start") => {
+                start(conf).await?;
+            }
+            Some("/city") => {
+                city(conf).await?;
+            }
             Some(_) => {
                 weather_response(conf).await?;
                 modify_state(&mut transaction, &chat_id, String::from("IN"))
@@ -313,7 +325,12 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             }
             _ => {}
         },
-        "DF" => {}
+        "DF" => match pm.message.text.as_deref() {
+            Some("/start") => {
+                start(conf).await?;
+            }
+            _ => {}
+        },
         _ => panic!("wtf is this state {} ?", state),
     }
     transaction.commit().await.unwrap();

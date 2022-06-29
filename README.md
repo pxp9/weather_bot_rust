@@ -11,7 +11,7 @@ This bot gives you weather info about any city in the world !
 
 You have two commands to do:
 
-- /start (Not yet implemented)
+- /start
 - /city
 
 <!--- 
