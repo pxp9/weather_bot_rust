@@ -12,10 +12,19 @@ use frankenstein::SendMessageParams;
 use frankenstein::{AsyncApi, UpdateContent};
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::env;
 use tokio::runtime;
 use tokio_postgres::NoTls;
+async fn start(conf: Conf<'_>) -> Result<(), Error> {
+    // Write a message xd
+    let text = format!(
+        "Hi, {}\\! Write it in the correct format please like this Madrid,ES or New York,US,NY",
+        conf.username
+    );
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
 fn parse_string(bad: String) -> String {
     let mut parsed = String::new();
     for c in bad.chars() {
@@ -58,7 +67,7 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
     let n = v.len();
     if n < 2 {
         let text = format!(
-            "Hi, {}\\! Write it in the correct format please like this Madrid,ES or New York,US,NY",
+            "Hi, {}\\! Write it in the correct format please like this:\n Madrid,ES or New York,US,NY",
             conf.username
         );
         send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
@@ -70,11 +79,21 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
     if n == 3 {
         state = v[2].trim();
     }
+    let (mut client, connection) =
+        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
+            .await
+            .unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    let mut transaction = client.transaction().await.unwrap();
     let (lon, lat, city_fmt, country_fmt, state_fmt) = match search_city(
-        (*city).to_string(),
-        (*country).to_string(),
-        (*state).to_string(),
-        conf.cities,
+        &mut transaction,
+        &(*city).to_string(),
+        &(*country).to_string(),
+        &(*state).to_string(),
     )
     .await
     {
@@ -114,11 +133,11 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
     );
     let text = match n {
         2 => parse_string(format!(
-            "User {} ,  City {} , Country {}\nLon {} , Lat {}{}",
+            "User {},City {},Country {}\nLon {} , Lat {}\n{}",
             conf.username, city_fmt, country_fmt, lon, lat, weather_info,
         )),
         3 => parse_string(format!(
-            "User {} ,  City {} , State {} , Country {}\nLon {} , Lat {}{}",
+            "User {},City {},State {},Country {}\nLon {}  Lat {}\n{}",
             conf.username, city_fmt, state_fmt, country_fmt, lon, lat, weather_info,
         )),
         _ => panic!("wtf is this ?"),
@@ -128,8 +147,7 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
 }
 async fn city(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
-        "Hi, {}\\! Write city and country acronym like this Madrid,ES
-        or for US states specify like this New York,US,NY being city,country,state",
+        "Hi, {}\\! Write city and country acronym like this:\n Madrid,ES\nor for US states specify like this:\n New York,US,NY being city,country,state",
         conf.username
     );
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
@@ -140,13 +158,11 @@ struct Conf<'a> {
     chat_id: &'a i64,
     username: &'a String,
     message: Message,
-    cities: &'a HashMap<(String, String, String), (f64, f64, String, String, String)>,
     opwm_token: &'a String,
 }
 struct ProcessMessage {
     api: AsyncApi,
     message: Message,
-    cities: HashMap<(String, String, String), (f64, f64, String, String, String)>,
     opwm_token: String,
     keypair: PKey<Private>,
 }
@@ -174,7 +190,26 @@ async fn bot_main() -> Result<(), Error> {
     let keypair = Rsa::private_key_from_pem(&binary_file).unwrap();
     let keypair = PKey::from_rsa(keypair).unwrap();
     // Maybe cities should be in the database dude
-    let json = tokio::spawn(async { read_json_cities() }).await.unwrap();
+    //let json = tokio::spawn(async { read_json_cities() }).await.unwrap();
+    // See if we have the cities in db
+    let (mut client, connection) =
+        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
+            .await
+            .unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    let mut transaction = client.transaction().await.unwrap();
+    let n = transaction
+        .execute("SELECT * FROM cities", &[])
+        .await
+        .unwrap();
+    if n == 0 {
+        read_json_cities(&mut transaction).await.unwrap();
+        transaction.commit().await.unwrap();
+    }
     // Fetch new updates via long poll method
     let update_params_builder = GetUpdatesParams::builder();
     let mut update_params = update_params_builder.clone().build();
@@ -185,13 +220,11 @@ async fn bot_main() -> Result<(), Error> {
                 for update in response.result {
                     if let UpdateContent::Message(message) = update.content {
                         let api_clone = api.clone();
-                        let json_clone = json.clone();
                         let token_clone = opwm_token.clone();
                         let keypair_clone = keypair.clone();
                         let pm = ProcessMessage {
                             api: api_clone,
                             message: message,
-                            cities: json_clone,
                             opwm_token: token_clone,
                             keypair: keypair_clone,
                         };
@@ -258,7 +291,6 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
         chat_id: &chat_id,
         username: &user,
         message: pm.message.clone(),
-        cities: &pm.cities,
         opwm_token: &pm.opwm_token,
     };
     match state.as_str() {

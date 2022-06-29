@@ -32,6 +32,33 @@ pub async fn is_in_db(db_transaction: &mut Transaction<'_>, chat_id: &i64) -> Re
         .await?
         == 1)
 }
+pub async fn search_city(
+    db_transaction: &mut Transaction<'_>,
+    n: &String,
+    c: &String,
+    s: &String,
+) -> Result<(f64, f64, String, String, String), ()> {
+    let vec: Vec<Row> = db_transaction
+        .query(
+            "SELECT name , country , state , lon , lat FROM cities WHERE 
+        UPPER(name) = UPPER($1) AND UPPER(country) = UPPER($2)
+            AND UPPER(state) = UPPER($3)",
+            &[n, c, s],
+        )
+        .await
+        .unwrap();
+    if vec.len() == 1 {
+        Ok((
+            vec[0].get("lon"),
+            vec[0].get("lat"),
+            vec[0].get("name"),
+            vec[0].get("country"),
+            vec[0].get("state"),
+        ))
+    } else {
+        Err(())
+    }
+}
 pub async fn get_client_state(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
