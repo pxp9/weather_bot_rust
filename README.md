@@ -34,7 +34,7 @@ https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
 
 ## Dependencies
 
-- frankenstein = { version = "0.18", default-features = false, features = ["async-http-client" , "async-telegram-trait"] }
+- frankenstein = {version = "0.18", default-features = false, features = ["async-http-client" , "async-telegram-trait"]}
 - futures = "0.3.21"
 - serde_json = "1.0"
 - reqwest = "0.9.18"
@@ -52,14 +52,16 @@ https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
 
 ### Maybe you need to reboot or source */etc/environment* file 
 
-### Also you need to setup a key.pem file that contains a private key in order to encrypt data in the db
-### and move the file to resources.
+### Also you need to setup a key.pem file that contains a private key in order to encrypt data in the db and move the file to resources.
 ```
 $ openssl genrsa -out key.pem 2048
 $ mv key.pem resources
 ```
 
 Run in command line : *cargo run*
+```
+$ cargo run
+```
 
 ## 3rd Party Documentations
 
