@@ -23,7 +23,7 @@ async fn start(conf: Conf<'_>) -> Result<(), Error> {
 The bot is going to ask a city in a specific format, finally the bot will provide the weather info.\n
 It would be really greatful if you take a look my GitHub, look how much work has this bot, if you like this bot give me
 an star or if you would like to self run it, fork the proyect please.\n
-[RustWeatherBot repo](https://github.com/pxp9/weather_bot_rust)",
+https://github.com/pxp9/weather_bot_rust",
         conf.username
     ));
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
@@ -33,6 +33,12 @@ fn parse_string(bad: String) -> String {
     let mut parsed = String::new();
     for c in bad.chars() {
         match c {
+            '[' => {
+                parsed.push_str("\\[");
+            }
+            ']' => {
+                parsed.push_str("\\]");
+            }
             '.' => {
                 parsed.push_str("\\.");
             }
@@ -65,6 +71,9 @@ fn parse_string(bad: String) -> String {
             }
             '{' => {
                 parsed.push_str("\\{");
+            }
+            '_' => {
+                parsed.push_str("\\_");
             }
             _ => {
                 let mut b = [0; 4];
@@ -137,7 +146,11 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
         ),
     };
     if lat == -91.0 {
-        println!("User {} ,  City {} not found", conf.username, city);
+        println!(
+            "User {} ,  City {} not found",
+            conf.username,
+            conf.message.text.as_ref().unwrap()
+        );
         let text = parse_string(format!(
             "Hi, {}! Your city {} was not found",
             conf.username,
@@ -174,10 +187,10 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
     Ok(())
 }
 async fn city(conf: Conf<'_>) -> Result<(), Error> {
-    let text = format!(
-        "Hi, {}\\! Write city and country acronym like this:\nMadrid,ES\nor for US states specify like this:\nNew York,US,NY being city,country,state",
+    let text = parse_string(format!(
+        "Hi, {}! Write city and country acronym like this:\nMadrid,ES\nor for US states specify like this:\nNew York,US,NY being city,country,state",
         conf.username
-    );
+    ));
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
