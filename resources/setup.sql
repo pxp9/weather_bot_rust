@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS chat (
   id BIGINT PRIMARY KEY, 
   "user" BYTEA NOT NULL, -- Bytea in order to store it encrypted
   state VARCHAR(2) NOT NULL,
-  city VARCHAR(50)
+  selected VARCHAR(80),
+  city VARCHAR(80)
 );
 -- SELECT name , country , state , lon , lat FROM chat WHERE UPPER(name) = UPPER('Madrid') AND UPPER(country) = UPPER('ES') 
 -- AND UPPER(state) = UPPER('') ;

@@ -98,24 +98,21 @@ async fn send_message_client(
     api.send_message(&send_message_params).await?;
     Ok(())
 }
-// En esta funcion el bot ya ha esperado a la respuesta del usuario
-async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
-    let v: Vec<&str> = conf.message.text.as_ref().unwrap().split(",").collect();
-    let n = v.len();
-    if n < 2 {
-        let text = format!(
-            "Hi, {}\\! Write it in the correct format please like this:\n Madrid,ES or New York,US,NY",
-            conf.username
-        );
-        send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
-        return Ok(());
-    }
-    let city = v[0].trim();
-    let country = v[1].trim();
-    let mut state = "";
-    if n == 3 {
-        state = v[2].trim();
-    }
+async fn cancel_message(conf: Conf<'_>) -> Result<(), Error> {
+    let text = parse_string(format!(
+        "Hi, {}!\n Your operation was canceled",
+        conf.username
+    ));
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
+async fn get_weather(
+    conf: &Conf<'_>,
+    city: &str,
+    country: &str,
+    state: &str,
+    n: usize,
+) -> Result<(), Error> {
     let (mut client, connection) =
         tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
             .await
@@ -186,9 +183,131 @@ async fn weather_response(conf: Conf<'_>) -> Result<(), Error> {
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
+// En esta funcion el bot ya ha esperado a la respuesta del usuario
+async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
+    let v: Vec<&str> = conf.message.text.as_ref().unwrap().split(",").collect();
+    let n = v.len();
+    if n < 2 {
+        let text = parse_string(format!(
+            "Hi, {}! Write it in the correct format please like this:\n Madrid,ES or New York,US,NY",
+            conf.username
+        ));
+        send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+        return Ok(());
+    }
+    let city = v[0].trim();
+    let country = v[1].trim();
+    let mut state = "";
+    if n == 3 {
+        state = v[2].trim();
+    }
+    Ok(get_weather(&conf, city, country, state, n).await?)
+}
+async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
+    let number: usize = conf
+        .message
+        .text
+        .as_ref()
+        .unwrap()
+        .parse::<usize>()
+        .unwrap();
+    let (mut client, connection) =
+        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
+            .await
+            .unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    let mut transaction = client.transaction().await.unwrap();
+    let selected = get_client_selected(&mut transaction, conf.chat_id)
+        .await
+        .unwrap();
+    let (name, country, state) = match get_city_row(&mut transaction, &selected, number).await {
+        Ok((n, c, s)) => (n, c, s),
+        Err(_) => (String::new(), String::new(), String::new()),
+    };
+    let n: usize = match state.as_str() {
+        "" => 2,
+        _ => 3,
+    };
+    if name == "" {
+        let text = parse_string(format!(
+            "Hi, {}! That number is not in the range",
+            conf.username
+        ));
+        send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+        Ok(())
+    } else {
+        Ok(get_weather(&conf, name.as_str(), country.as_str(), state.as_str(), n).await?)
+    }
+}
 async fn city(conf: Conf<'_>) -> Result<(), Error> {
     let text = parse_string(format!(
         "Hi, {}! Write city and country acronym like this:\nMadrid,ES\nor for US states specify like this:\nNew York,US,NY being city,country,state",
+        conf.username
+    ));
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
+async fn pattern_city(conf: Conf<'_>) -> Result<(), Error> {
+    let text = parse_string(format!(
+        "Hi, {}! Write a city , let me see if i find it",
+        conf.username
+    ));
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
+async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
+    let pattern = conf.message.text.as_ref().unwrap();
+    let (mut client, connection) =
+        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
+            .await
+            .unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    let mut transaction = client.transaction().await.unwrap();
+    let vec = get_city_by_pattern(&mut transaction, &pattern)
+        .await
+        .unwrap();
+    if vec.len() == 0 {
+        let text = parse_string(format!(
+            "Hi, {}! Your city {} was not found , try again",
+            conf.username, pattern,
+        ));
+        send_message_client(conf.chat_id, text, &conf.message, &conf.api)
+            .await
+            .unwrap();
+        return Err(());
+    }
+    let mut i = 1;
+    let mut text: String = format!(
+        "Hi {}, i found these cities put a number to select one\n\n",
+        conf.username
+    );
+    for row in vec {
+        let name: String = row.get("name");
+        let country: String = row.get("country");
+        let state: String = row.get("state");
+        if state == "" {
+            text += &format!("{}. {},{}\n", i, name, country);
+        } else {
+            text += &format!("{}. {},{},{}\n", i, name, country, state);
+        }
+        i += 1;
+    }
+    send_message_client(conf.chat_id, parse_string(text), &conf.message, &conf.api)
+        .await
+        .unwrap();
+    Ok(())
+}
+async fn not_number_message(conf: Conf<'_>) -> Result<(), Error> {
+    let text = parse_string(format!(
+        "Hi, {}! That's not a positive number in the range, try again",
         conf.username
     ));
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
@@ -345,26 +464,90 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                     .await
                     .unwrap();
             }
+            Some("/pattern") => {
+                pattern_city(conf).await?;
+                modify_state(&mut transaction, &chat_id, String::from("AP"))
+                    .await
+                    .unwrap();
+            }
             _ => {}
         },
         "AC" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
             }
+            Some("/cancel") => {
+                cancel_message(conf).await?;
+                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                    .await
+                    .unwrap();
+            }
             Some("/city") => {
                 city(conf).await?;
             }
             Some(_) => {
-                weather_response(conf).await?;
+                city_response(conf).await?;
                 modify_state(&mut transaction, &chat_id, String::from("IN"))
                     .await
                     .unwrap();
             }
             _ => {}
         },
+        "AP" => match pm.message.text.as_deref() {
+            Some("/start") => {
+                start(conf).await?;
+            }
+            Some("/cancel") => {
+                cancel_message(conf).await?;
+                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                    .await
+                    .unwrap();
+            }
+            Some(text) => match find_city(conf).await {
+                Ok(_) => {
+                    modify_selected(&mut transaction, &chat_id, text.to_string())
+                        .await
+                        .unwrap();
+                    modify_state(&mut transaction, &chat_id, String::from("AN"))
+                        .await
+                        .unwrap();
+                }
+                Err(()) => {}
+            },
+            _ => {}
+        },
+        "AN" => match pm.message.text.as_deref() {
+            Some("/start") => {
+                start(conf).await?;
+            }
+            Some("/cancel") => {
+                cancel_message(conf).await?;
+                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                    .await
+                    .unwrap();
+            }
+            Some(text) => match text.parse::<usize>() {
+                Ok(_) => {
+                    pattern_response(conf).await?;
+                    modify_state(&mut transaction, &chat_id, String::from("IN"))
+                        .await
+                        .unwrap();
+                }
+                Err(_) => {
+                    not_number_message(conf).await?;
+                }
+            },
+            _ => {}
+        },
         "DF" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
+            }
+            Some("/cancel") => {
+                cancel_message(conf).await?;
+                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                    .await
+                    .unwrap();
             }
             _ => {}
         },
