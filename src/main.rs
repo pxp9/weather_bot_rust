@@ -18,71 +18,18 @@ use tokio::runtime;
 use tokio_postgres::NoTls;
 async fn start(conf: Conf<'_>) -> Result<(), Error> {
     // Write a message xd
-    let text = parse_string(format!(
+    let text = format!(
         "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n/city\n
 The bot is going to ask a city in a specific format, finally the bot will provide the weather info.\n
 It would be really greatful if you take a look my GitHub, look how much work has this bot, if you like this bot give me
 an star or if you would like to self run it, fork the proyect please.\n
-https://github.com/pxp9/weather_bot_rust",
+<a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot </a>",
         conf.username
-    ));
+    );
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
-fn parse_string(bad: String) -> String {
-    let mut parsed = String::new();
-    for c in bad.chars() {
-        match c {
-            '[' => {
-                parsed.push_str("\\[");
-            }
-            ']' => {
-                parsed.push_str("\\]");
-            }
-            '.' => {
-                parsed.push_str("\\.");
-            }
-            '!' => {
-                parsed.push_str("\\!");
-            }
-            '-' => {
-                parsed.push_str("\\-");
-            }
-            '=' => {
-                parsed.push_str("\\=");
-            }
-            '#' => {
-                parsed.push_str("\\#");
-            }
-            '*' => {
-                parsed.push_str("\\*");
-            }
-            '(' => {
-                parsed.push_str("\\(");
-            }
-            ')' => {
-                parsed.push_str("\\)");
-            }
-            '+' => {
-                parsed.push_str("\\+");
-            }
-            '}' => {
-                parsed.push_str("\\}");
-            }
-            '{' => {
-                parsed.push_str("\\{");
-            }
-            '_' => {
-                parsed.push_str("\\_");
-            }
-            _ => {
-                let mut b = [0; 4];
-                parsed.push_str(c.encode_utf8(&mut b))
-            }
-        }
-    }
-    parsed
-}
+
 async fn send_message_client(
     chat_id: &i64,
     text: String,
@@ -93,16 +40,13 @@ async fn send_message_client(
         .chat_id(*chat_id)
         .text(text)
         .reply_to_message_id(message.message_id)
-        .parse_mode(ParseMode::MarkdownV2)
+        .parse_mode(ParseMode::Html)
         .build();
     api.send_message(&send_message_params).await?;
     Ok(())
 }
 async fn cancel_message(conf: Conf<'_>) -> Result<(), Error> {
-    let text = parse_string(format!(
-        "Hi, {}!\n Your operation was canceled",
-        conf.username
-    ));
+    let text = format!("Hi, {}!\n Your operation was canceled", conf.username);
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
@@ -148,11 +92,11 @@ async fn get_weather(
             conf.username,
             conf.message.text.as_ref().unwrap()
         );
-        let text = parse_string(format!(
+        let text = format!(
             "Hi, {}! Your city {} was not found",
             conf.username,
             conf.message.text.as_ref().unwrap()
-        ));
+        );
         send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
 
         return Ok(());
@@ -170,14 +114,14 @@ async fn get_weather(
         conf.username, city_fmt, country_fmt, lon, lat, weather_info
     );
     let text = match n {
-        2 => parse_string(format!(
+        2 => format!(
             "Hi {},\n{},{}\nLon {} , Lat {}\n{}",
             conf.username, city_fmt, country_fmt, lon, lat, weather_info,
-        )),
-        3 => parse_string(format!(
+        ),
+        3 => format!(
             "Hi {},\n{},{},{}\nLon {}  Lat {}\n{}",
             conf.username, city_fmt, country_fmt, state_fmt, lon, lat, weather_info,
-        )),
+        ),
         _ => panic!("wtf is this ?"),
     };
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
@@ -188,10 +132,10 @@ async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
     let v: Vec<&str> = conf.message.text.as_ref().unwrap().split(",").collect();
     let n = v.len();
     if n < 2 {
-        let text = parse_string(format!(
+        let text = format!(
             "Hi, {}! Write it in the correct format please like this:\n Madrid,ES or New York,US,NY",
             conf.username
-        ));
+        );
         send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
         return Ok(());
     }
@@ -233,10 +177,7 @@ async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
         _ => 3,
     };
     if name == "" {
-        let text = parse_string(format!(
-            "Hi, {}! That number is not in the range",
-            conf.username
-        ));
+        let text = format!("Hi, {}! That number is not in the range", conf.username);
         send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
         Ok(())
     } else {
@@ -244,18 +185,18 @@ async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
     }
 }
 async fn city(conf: Conf<'_>) -> Result<(), Error> {
-    let text = parse_string(format!(
+    let text = format!(
         "Hi, {}! Write city and country acronym like this:\nMadrid,ES\nor for US states specify like this:\nNew York,US,NY being city,country,state",
         conf.username
-    ));
+    );
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
 async fn pattern_city(conf: Conf<'_>) -> Result<(), Error> {
-    let text = parse_string(format!(
+    let text = format!(
         "Hi, {}! Write a city , let me see if i find it",
         conf.username
-    ));
+    );
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
@@ -274,11 +215,11 @@ async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
     let vec = get_city_by_pattern(&mut transaction, &pattern)
         .await
         .unwrap();
-    if vec.len() == 0 {
-        let text = parse_string(format!(
+    if vec.len() == 0 || vec.len() > 30 {
+        let text = format!(
             "Hi, {}! Your city {} was not found , try again",
             conf.username, pattern,
-        ));
+        );
         send_message_client(conf.chat_id, text, &conf.message, &conf.api)
             .await
             .unwrap();
@@ -300,16 +241,16 @@ async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
         }
         i += 1;
     }
-    send_message_client(conf.chat_id, parse_string(text), &conf.message, &conf.api)
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api)
         .await
         .unwrap();
     Ok(())
 }
 async fn not_number_message(conf: Conf<'_>) -> Result<(), Error> {
-    let text = parse_string(format!(
+    let text = format!(
         "Hi, {}! That's not a positive number in the range, try again",
         conf.username
-    ));
+    );
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
