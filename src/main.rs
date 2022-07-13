@@ -383,7 +383,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
         )
         .await
         .unwrap();
-        state = String::from("IN");
+        state = String::from("Initial");
     } else {
         state = get_client_state(&mut transaction, &chat_id).await.unwrap();
     }
@@ -395,31 +395,31 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
         opwm_token: &pm.opwm_token,
     };
     match state.as_str() {
-        "IN" => match pm.message.text.as_deref() {
+        "Initial" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
             }
             Some("/city") => {
                 city(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("AC"))
+                modify_state(&mut transaction, &chat_id, String::from("AskingCity"))
                     .await
                     .unwrap();
             }
             Some("/pattern") => {
                 pattern_city(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("AP"))
+                modify_state(&mut transaction, &chat_id, String::from("AskingPattern"))
                     .await
                     .unwrap();
             }
             _ => {}
         },
-        "AC" => match pm.message.text.as_deref() {
+        "AskingCity" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
             }
             Some("/cancel") => {
                 cancel_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                modify_state(&mut transaction, &chat_id, String::from("Initial"))
                     .await
                     .unwrap();
             }
@@ -428,19 +428,19 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             }
             Some(_) => {
                 city_response(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                modify_state(&mut transaction, &chat_id, String::from("Initial"))
                     .await
                     .unwrap();
             }
             _ => {}
         },
-        "AP" => match pm.message.text.as_deref() {
+        "AskingPattern" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
             }
             Some("/cancel") => {
                 cancel_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                modify_state(&mut transaction, &chat_id, String::from("Initial"))
                     .await
                     .unwrap();
             }
@@ -449,7 +449,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                     modify_selected(&mut transaction, &chat_id, text.to_string())
                         .await
                         .unwrap();
-                    modify_state(&mut transaction, &chat_id, String::from("AN"))
+                    modify_state(&mut transaction, &chat_id, String::from("AskingNumber"))
                         .await
                         .unwrap();
                 }
@@ -457,20 +457,20 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             },
             _ => {}
         },
-        "AN" => match pm.message.text.as_deref() {
+        "AskingNumber" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
             }
             Some("/cancel") => {
                 cancel_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                modify_state(&mut transaction, &chat_id, String::from("Initial"))
                     .await
                     .unwrap();
             }
             Some(text) => match text.parse::<usize>() {
                 Ok(_) => {
                     pattern_response(conf).await?;
-                    modify_state(&mut transaction, &chat_id, String::from("IN"))
+                    modify_state(&mut transaction, &chat_id, String::from("Initial"))
                         .await
                         .unwrap();
                 }
@@ -480,13 +480,13 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             },
             _ => {}
         },
-        "DF" => match pm.message.text.as_deref() {
+        "Default" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
             }
             Some("/cancel") => {
                 cancel_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("IN"))
+                modify_state(&mut transaction, &chat_id, String::from("Initial"))
                     .await
                     .unwrap();
             }
