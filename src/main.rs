@@ -2,6 +2,7 @@ mod json_parse;
 use crate::json_parse::*;
 mod database_manage;
 use crate::database_manage::*;
+mod tests;
 use frankenstein::api_params::{ChatAction, SendChatActionParams};
 use frankenstein::AsyncTelegramApi;
 use frankenstein::Error;
