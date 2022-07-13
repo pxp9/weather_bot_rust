@@ -12,12 +12,11 @@ use frankenstein::SendMessageParams;
 use frankenstein::{AsyncApi, UpdateContent};
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
-// use std::collections::HashMap;
 use std::env;
 use tokio::runtime;
 use tokio_postgres::NoTls;
+// What we do if users write /start in any state.
 async fn start(conf: Conf<'_>) -> Result<(), Error> {
-    // Write a message xd
     let text = format!(
         "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n/city\n
 The bot is going to ask a city in a specific format, finally the bot will provide the weather info.\n
@@ -29,7 +28,7 @@ an star or if you would like to self run it, fork the proyect please.\n
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
-
+// Function to send a message to a client.
 async fn send_message_client(
     chat_id: &i64,
     text: String,
@@ -45,11 +44,13 @@ async fn send_message_client(
     api.send_message(&send_message_params).await?;
     Ok(())
 }
+// What we do if users write /cancel in any state
 async fn cancel_message(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!("Hi, {}!\n Your operation was canceled", conf.username);
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
+// Function to get daily weather info from Open Weather Map
 async fn get_weather(
     conf: &Conf<'_>,
     city: &str,
@@ -127,7 +128,7 @@ async fn get_weather(
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
-// En esta funcion el bot ya ha esperado a la respuesta del usuario
+// What we do if users write a city in correct format that is in the DB in AskingCity state.
 async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
     let v: Vec<&str> = conf.message.text.as_ref().unwrap().split(",").collect();
     let n = v.len();
@@ -147,6 +148,7 @@ async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
     }
     Ok(get_weather(&conf, city, country, state, n).await?)
 }
+// What we do if users write a number in AskingNumber state.
 async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
     let number: usize = conf
         .message
@@ -184,6 +186,7 @@ async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
         Ok(get_weather(&conf, name.as_str(), country.as_str(), state.as_str(), n).await?)
     }
 }
+// What we do if users write /city in Initial state.
 async fn city(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
         "Hi, {}! Write city and country acronym like this:\nMadrid,ES\nor for US states specify like this:\nNew York,US,NY being city,country,state",
@@ -192,6 +195,7 @@ async fn city(conf: Conf<'_>) -> Result<(), Error> {
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
+// What we do if users write /pattern in Initial state.
 async fn pattern_city(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
         "Hi, {}! Write a city , let me see if i find it",
@@ -200,6 +204,7 @@ async fn pattern_city(conf: Conf<'_>) -> Result<(), Error> {
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
+// What we do if users write a city in AskingPattern state.
 async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
     let pattern = conf.message.text.as_ref().unwrap();
     let (mut client, connection) =
@@ -246,6 +251,7 @@ async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
         .unwrap();
     Ok(())
 }
+// What we do if we are in AskingNumber state and is not a number
 async fn not_number_message(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
         "Hi, {}! That's not a positive number in the range, try again",
@@ -283,6 +289,7 @@ fn main() {
 }
 
 async fn bot_main() -> Result<(), Error> {
+    // Initial setup to run the bot
     let token = env::var("RUST_TELEGRAM_BOT_TOKEN").expect("RUST_TELEGRAM_BOT_TOKEN not set");
     let api = AsyncApi::new(&token);
     let opwm_token =
@@ -290,8 +297,7 @@ async fn bot_main() -> Result<(), Error> {
     let binary_file = std::fs::read("./resources/key.pem").unwrap();
     let keypair = Rsa::private_key_from_pem(&binary_file).unwrap();
     let keypair = PKey::from_rsa(keypair).unwrap();
-    // Maybe cities should be in the database dude
-    //let json = tokio::spawn(async { read_json_cities() }).await.unwrap();
+    // Cities are in database ?
     // See if we have the cities in db
     let (mut client, connection) =
         tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
@@ -323,12 +329,14 @@ async fn bot_main() -> Result<(), Error> {
                         let api_clone = api.clone();
                         let token_clone = opwm_token.clone();
                         let keypair_clone = keypair.clone();
+                        // What we need to Process a Message.
                         let pm = ProcessMessage {
                             api: api_clone,
                             message: message,
                             opwm_token: token_clone,
                             keypair: keypair_clone,
                         };
+                        // For each update we process the message that has.
                         tokio::spawn(async move { process_message(pm).await.unwrap() });
 
                         update_params = update_params_builder
@@ -344,6 +352,7 @@ async fn bot_main() -> Result<(), Error> {
         }
     }
 }
+// Function to make the bot Typing ...
 async fn send_typing(message: &Message, api: &AsyncApi) -> Result<(), Error> {
     let send_chat_action_params = SendChatActionParams::builder()
         .chat_id((*((*message).chat)).id)
@@ -352,7 +361,9 @@ async fn send_typing(message: &Message, api: &AsyncApi) -> Result<(), Error> {
     api.send_chat_action(&send_chat_action_params).await?;
     Ok(())
 }
+// Process the message of each update
 async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
+    // get the user that is writing the message
     let chat_id: i64 = (*pm.message.chat).id;
     let user = match &pm.message.from.as_deref() {
         Some(user) => match &user.username {
@@ -362,6 +373,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
         None => panic!("No user ???"),
     };
     send_typing(&pm.message, &pm.api).await?;
+    // check if the user is in the database.
     let (mut client, connection) =
         tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
             .await
@@ -373,6 +385,8 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     });
     let mut transaction = client.transaction().await.unwrap();
     let state: String;
+    // if user is not in the database, insert the user with Initial state
+    // if it is , check its state.
     if !is_in_db(&mut transaction, &chat_id).await.unwrap() {
         insert_client(
             &mut transaction,
@@ -387,6 +401,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     } else {
         state = get_client_state(&mut transaction, &chat_id).await.unwrap();
     }
+    // All what we need to handle the updates.
     let conf = Conf {
         api: &pm.api,
         chat_id: &chat_id,
@@ -394,6 +409,8 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
         message: pm.message.clone(),
         opwm_token: &pm.opwm_token,
     };
+    // State Machine that handles the user update.
+    // Match the state and the message to know what to do.
     match state.as_str() {
         "Initial" => match pm.message.text.as_deref() {
             Some("/start") => {
@@ -494,6 +511,9 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
         },
         _ => panic!("wtf is this state {} ?", state),
     }
+    // VERY IMPORTANT
+    // this will modify state of the user in the database and make it persist.
+    // if we do not modify it, program should have serious issues.
     transaction.commit().await.unwrap();
     Ok(())
 }
