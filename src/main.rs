@@ -19,7 +19,7 @@ use tokio_postgres::NoTls;
 // What we do if users write /start in any state.
 async fn start(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
-        "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n/city\n
+        "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n/city ask weather info from a city in a specific format\n/pattern ask weather info from city without format\n
 The bot is going to ask a city in a specific format, finally the bot will provide the weather info.\n
 It would be really greatful if you take a look my GitHub, look how much work has this bot, if you like this bot give me
 an star or if you would like to self run it, fork the proyect please.\n
