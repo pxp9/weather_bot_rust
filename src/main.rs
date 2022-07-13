@@ -480,7 +480,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             },
             _ => {}
         },
-        "Default" => match pm.message.text.as_deref() {
+        "DefaultCity" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
             }
