@@ -94,7 +94,10 @@ pub async fn insert_client(
         .await?;
     let user_encrypted = encrypt_string(user, keypair).await;
     Ok(db_transaction
-        .execute(&insert, &[chat_id, &user_encrypted, &"IN", &default_city])
+        .execute(
+            &insert,
+            &[chat_id, &user_encrypted, &"Initial", &default_city],
+        )
         .await?)
 }
 pub async fn delete_client(
