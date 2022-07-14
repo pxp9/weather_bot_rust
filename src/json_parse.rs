@@ -42,7 +42,7 @@ pub async fn parse_weather(response: String) -> Result<String, ()> {
     let pressure = main_info["pressure"].as_i64().unwrap();
     let humidity = main_info["humidity"].as_i64().unwrap();
     let st: String = format!(
-        "\n🌍🌍 Weather: {}\n🌡️🌡️ Temp: {}ºC\n🧊🧊 Temp mínima: {} ºC\n🌡️🌡️ Temp máxima: {} ºC\n⛰️⛰️ Presión: {} hPa\n💧💧 Humedad: {} %",
+        "\n🌍🌍 Weather: {}\n🌡️🌡️ Temp: {}ºC\n🧊🧊 Temp mínima: {} \n🔥🔥 Temp máxima: {} ºC\n⛰️⛰️ Presión: {} hPa\n💧💧 Humedad: {} %",
         weather_desc, temp, temp_min, temp_max, pressure, humidity
     );
     Ok(st)
