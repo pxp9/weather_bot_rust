@@ -33,9 +33,13 @@ The bot uses acronyms using the standard ISO 3166
 https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
 
 Also you can try pattern search which is easier than formatted search.
+
 Just write a city name like this:
+
 Madrid
+
 The bot is going to answer:
+
 ```
 1. Barajas de Madrid,ES
 2. Comunidad de Madrid,ES
