@@ -519,15 +519,9 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     // if user is not in the database, insert the user with Initial state
     // if it is , check its state.
     if !is_in_db(&mut transaction, &chat_id).await.unwrap() {
-        insert_client(
-            &mut transaction,
-            &chat_id,
-            user.clone(),
-            String::new(),
-            &pm.keypair,
-        )
-        .await
-        .unwrap();
+        insert_client(&mut transaction, &chat_id, user.clone(), &pm.keypair)
+            .await
+            .unwrap();
         state = String::from("Initial");
     } else {
         state = get_client_state(&mut transaction, &chat_id).await.unwrap();

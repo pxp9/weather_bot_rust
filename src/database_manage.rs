@@ -112,24 +112,14 @@ pub async fn insert_client(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
     user: String,
-    default_city: String,
     keypair: &PKey<Private>,
 ) -> Result<u64, Error> {
     let insert = db_transaction
-        .prepare("INSERT INTO chat (id , \"user\" , state , context , city ) VALUES ($1 , $2 , $3 , $4 , $5)")
+        .prepare("INSERT INTO chat (id , \"user\" , state , context ) VALUES ($1 , $2 , $3 , $4 )")
         .await?;
     let user_encrypted = encrypt_string(user, keypair).await;
     Ok(db_transaction
-        .execute(
-            &insert,
-            &[
-                chat_id,
-                &user_encrypted,
-                &"Initial",
-                &"Initial",
-                &default_city,
-            ],
-        )
+        .execute(&insert, &[chat_id, &user_encrypted, &"Initial", &"Initial"])
         .await?)
 }
 pub async fn delete_client(
