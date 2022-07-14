@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod db {
     use crate::database_manage::*;
     use tokio_postgres::{NoTls, Row};
     #[tokio::test]
