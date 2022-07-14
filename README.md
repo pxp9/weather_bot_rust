@@ -9,17 +9,17 @@
 
 This bot gives you weather info about any city in the world !
 
-You have two commands to do:
+You have a few commands to do:
 
 - /start
 - /city
+- /pattern
+- /cancel
+- /set_city
+- /set_search
+- /default
 
-<!--- 
-- /help
-- /start 
--->
-
-you must especify a city and country like this:
+you can especify a city and country like this:
 
 Madrid,ES
 
@@ -29,8 +29,37 @@ New York,US,NY
 
 Spaces between comas and names does not mattter as well capital letters or not.
 
-the bot uses acronyms using the standard ISO 3166
+The bot uses acronyms using the standard ISO 3166
 https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
+
+Also you can try pattern search which is easier than formatted search.
+Just write a city name like this:
+Madrid
+The bot is going to answer:
+```
+1. Barajas de Madrid,ES
+2. Comunidad de Madrid,ES
+3. General La Madrid,AR
+4. Humanes de Madrid,ES
+5. Lamadrid,ES
+6. Las Rozas de Madrid,ES
+7. Madrid,CO
+8. Madrid,ES
+9. Madrid,MX
+10. Madrid,PH
+11. Madrid,US,IA
+12. Madridanos,ES
+13. Madridejos,ES
+14. Madridejos,PH
+15. New Madrid,US,MO
+16. Partido de General La Madrid,AR
+17. Provincia de Madrid,ES
+18. Rivas-Vaciamadrid,ES
+19. Valmadrid,ES
+```
+Then choose a number and get weather info.
+
+
 
 ## Dependencies
 
