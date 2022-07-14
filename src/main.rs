@@ -399,6 +399,7 @@ struct Conf<'a> {
     opwm_token: &'a String,
 }
 struct ProcessMessage {
+    me: String,
     api: AsyncApi,
     message: Message,
     opwm_token: String,
@@ -428,6 +429,7 @@ async fn bot_main() -> Result<(), Error> {
     let binary_file = std::fs::read("./resources/key.pem").unwrap();
     let keypair = Rsa::private_key_from_pem(&binary_file).unwrap();
     let keypair = PKey::from_rsa(keypair).unwrap();
+    let me = api.get_me().await?.result.username.unwrap();
     // Cities are in database ?
     // See if we have the cities in db
     let (mut client, connection) =
@@ -460,8 +462,10 @@ async fn bot_main() -> Result<(), Error> {
                         let api_clone = api.clone();
                         let token_clone = opwm_token.clone();
                         let keypair_clone = keypair.clone();
+                        let me_clone = me.clone();
                         // What we need to Process a Message.
                         let pm = ProcessMessage {
+                            me: me_clone,
                             api: api_clone,
                             message: message,
                             opwm_token: token_clone,
@@ -538,57 +542,59 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     // Match the state and the message to know what to do.
     match state.as_str() {
         "Initial" => match pm.message.text.as_deref() {
-            Some("/start") => {
+            Some("/start") | Some("/start@RustWeather77Bot") => {
                 start(conf).await?;
             }
-            Some("/city") => {
+            Some("/city") | Some("/city@RustWeather77Bot") => {
                 formatted_city_message(conf).await?;
                 modify_state(&mut transaction, &chat_id, String::from("AskingCity"))
                     .await
                     .unwrap();
             }
-            Some("/default") => match get_client_city(&mut transaction, &chat_id).await {
-                Ok(formated) => {
-                    let v: Vec<&str> = formated.as_str().split(",").collect();
-                    let n = v.len();
-                    let city = v[0];
-                    let country = v[1];
-                    let mut state = "";
-                    if n == 3 {
-                        state = v[2];
+            Some("/default") | Some("/default@RustWeather77Bot") => {
+                match get_client_city(&mut transaction, &chat_id).await {
+                    Ok(formated) => {
+                        let v: Vec<&str> = formated.as_str().split(",").collect();
+                        let n = v.len();
+                        let city = v[0];
+                        let country = v[1];
+                        let mut state = "";
+                        if n == 3 {
+                            state = v[2];
+                        }
+                        get_weather(&conf, city, country, state, n).await?
                     }
-                    get_weather(&conf, city, country, state, n).await?
+                    Err(_) => {
+                        not_default_message(&conf).await?;
+                        set_city(conf, &mut transaction, &chat_id).await?;
+                    }
                 }
-                Err(_) => {
-                    not_default_message(&conf).await?;
-                    set_city(conf, &mut transaction, &chat_id).await?;
-                }
-            },
-            Some("/pattern") => {
+            }
+            Some("/pattern") | Some("/pattern@RustWeather77Bot") => {
                 pattern_city(conf).await?;
                 modify_state(&mut transaction, &chat_id, String::from("AskingPattern"))
                     .await
                     .unwrap();
             }
-            Some("/set_search") => {
+            Some("/set_search") | Some("/set_search@RustWeather77Bot") => {
                 asking_search_mode(conf).await?;
                 modify_state(&mut transaction, &chat_id, String::from("AskingSearchMode"))
                     .await
                     .unwrap();
             }
-            Some("/set_city") => {
+            Some("/set_city") | Some("/set_city@RustWeather77Bot") => {
                 set_city(conf, &mut transaction, &chat_id).await?;
             }
             _ => {}
         },
         "AskingCity" => match pm.message.text.as_deref() {
-            Some("/start") => {
+            Some("/start") | Some("/start@RustWeather77Bot") => {
                 start(conf).await?;
             }
-            Some("/cancel") => {
+            Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf, &mut transaction).await?;
             }
-            Some("/city") => {
+            Some("/city") | Some("/city@RustWeather77Bot") => {
                 formatted_city_message(conf).await?;
             }
             Some(_) => {
@@ -603,10 +609,10 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             _ => {}
         },
         "AskingPattern" => match pm.message.text.as_deref() {
-            Some("/start") => {
+            Some("/start") | Some("/start@RustWeather77Bot") => {
                 start(conf).await?;
             }
-            Some("/cancel") => {
+            Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf, &mut transaction).await?;
             }
             Some(text) => match find_city(conf).await {
@@ -623,10 +629,10 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             _ => {}
         },
         "AskingNumber" => match pm.message.text.as_deref() {
-            Some("/start") => {
+            Some("/start") | Some("/start@RustWeather77Bot") => {
                 start(conf).await?;
             }
-            Some("/cancel") => {
+            Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf, &mut transaction).await?;
             }
             Some(text) => match text.parse::<usize>() {
@@ -647,10 +653,10 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
         },
 
         "AskingSearchMode" => match pm.message.text.as_deref() {
-            Some("/start") => {
+            Some("/start") | Some("/start@RustWeather77Bot") => {
                 start(conf).await?;
             }
-            Some("/cancel") => {
+            Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf, &mut transaction).await?;
             }
             Some(text) => {
