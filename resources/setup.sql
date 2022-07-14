@@ -8,9 +8,11 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'weather_bot')\gexec
 CREATE TABLE IF NOT EXISTS chat (
   id BIGINT PRIMARY KEY, 
   "user" BYTEA NOT NULL, -- Bytea in order to store it encrypted
-  state VARCHAR(20) NOT NULL,
+  state VARCHAR(20) NOT NULL, -- Initial
+  before_state VARCHAR(20) NOT NULL, -- Initial
   selected VARCHAR(80),
-  city VARCHAR(80)
+  city VARCHAR(80), 
+  pattern_search BOOLEAN
 );
 -- UPDATE chat SET state = 'Initial';
 -- SELECT name , country , state , lon , lat FROM chat WHERE UPPER(name) = UPPER('Madrid') AND UPPER(country) = UPPER('ES') 

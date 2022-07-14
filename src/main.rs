@@ -15,7 +15,7 @@ use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
 use std::env;
 use tokio::runtime;
-use tokio_postgres::NoTls;
+use tokio_postgres::{NoTls, Transaction};
 // What we do if users write /start in any state.
 async fn start(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
@@ -46,9 +46,15 @@ async fn send_message_client(
     Ok(())
 }
 // What we do if users write /cancel in any state
-async fn cancel_message(conf: Conf<'_>) -> Result<(), Error> {
+async fn cancel(conf: Conf<'_>, transaction: &mut Transaction<'_>) -> Result<(), Error> {
     let text = format!("Hi, {}!\n Your operation was canceled", conf.username);
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    modify_context(transaction, conf.chat_id, String::from("Initial"))
+        .await
+        .unwrap();
+    modify_state(transaction, conf.chat_id, String::from("Initial"))
+        .await
+        .unwrap();
     Ok(())
 }
 // Function to get daily weather info from Open Weather Map
@@ -142,12 +148,50 @@ async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
         return Ok(());
     }
     let city = v[0].trim();
-    let country = v[1].trim();
-    let mut state = "";
+    let country = v[1].to_uppercase();
+    let mut state = String::new();
     if n == 3 {
-        state = v[2].trim();
+        state = v[2].to_uppercase();
     }
-    Ok(get_weather(&conf, city, country, state, n).await?)
+    let (mut client, connection) =
+        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
+            .await
+            .unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    let mut transaction = client.transaction().await.unwrap();
+    match get_client_context(&mut transaction, conf.chat_id)
+        .await
+        .unwrap()
+        .as_str()
+    {
+        "Initial" => Ok(get_weather(&conf, city, country.trim(), state.trim(), n).await?),
+        "SetDefaultCity" => {
+            let record = match n {
+                2 => {
+                    format!("{},{}", city, country)
+                }
+                3 => {
+                    format!("{},{},{}", city, country, state)
+                }
+                _ => {
+                    panic!("wtf is this number")
+                }
+            };
+            modify_city(&mut transaction, conf.chat_id, record)
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+            city_updated_message(&conf).await?;
+            Ok(())
+        }
+        _ => {
+            panic!("wtf is this context")
+        }
+    }
 }
 // What we do if users write a number in AskingNumber state.
 async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
@@ -179,16 +223,41 @@ async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
         "" => 2,
         _ => 3,
     };
-    if name == "" {
-        let text = format!("Hi, {}! That number is not in the range", conf.username);
-        send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
-        Ok(())
-    } else {
-        Ok(get_weather(&conf, name.as_str(), country.as_str(), state.as_str(), n).await?)
+
+    match get_client_context(&mut transaction, conf.chat_id)
+        .await
+        .unwrap()
+        .as_str()
+    {
+        "Initial" => {
+            Ok(get_weather(&conf, name.as_str(), country.as_str(), state.as_str(), n).await?)
+        }
+        "SetDefaultPattern" => {
+            let record = match n {
+                2 => {
+                    format!("{},{}", name, country)
+                }
+                3 => {
+                    format!("{},{},{}", name, country, state)
+                }
+                _ => {
+                    panic!("wtf is this number")
+                }
+            };
+            modify_city(&mut transaction, conf.chat_id, record)
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+            city_updated_message(&conf).await?;
+            Ok(())
+        }
+        _ => {
+            panic!("wtf is this context")
+        }
     }
 }
 // What we do if users write /city in Initial state.
-async fn city(conf: Conf<'_>) -> Result<(), Error> {
+async fn formatted_city_message(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
         "Hi, {}! Write city and country acronym like this:\nMadrid,ES\nor for US states specify like this:\nNew York,US,NY being city,country,state",
         conf.username
@@ -202,6 +271,20 @@ async fn pattern_city(conf: Conf<'_>) -> Result<(), Error> {
         "Hi, {}! Write a city , let me see if i find it",
         conf.username
     );
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
+async fn asking_search_mode(conf: Conf<'_>) -> Result<(), Error> {
+    let text = format!(
+        "Hi, {}! Would you like to set the city with pattern search ? y/n",
+        conf.username
+    );
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
+
+async fn not_default_message(conf: &Conf<'_>) -> Result<(), Error> {
+    let text = format!("Hi, {}! Setting default city...", conf.username);
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
     Ok(())
 }
@@ -259,6 +342,53 @@ async fn not_number_message(conf: Conf<'_>) -> Result<(), Error> {
         conf.username
     );
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
+async fn city_updated_message(conf: &Conf<'_>) -> Result<(), Error> {
+    let text = format!("Hi, {}! Your default city was updated", conf.username);
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
+
+async fn searchmode_updated_message(conf: &Conf<'_>) -> Result<(), Error> {
+    let text = format!("Hi, {}! Your search mode was updated", conf.username);
+    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    Ok(())
+}
+async fn set_city(
+    conf: Conf<'_>,
+    transaction: &mut Transaction<'_>,
+    chat_id: &i64,
+) -> Result<(), Error> {
+    match get_client_pattern_search(transaction, chat_id).await {
+        Ok(true) => {
+            pattern_city(conf).await?;
+            modify_state(transaction, chat_id, String::from("AskingPattern"))
+                .await
+                .unwrap();
+            modify_context(transaction, chat_id, String::from("SetDefaultPattern"))
+                .await
+                .unwrap();
+        }
+        Ok(false) => {
+            formatted_city_message(conf).await?;
+            modify_state(transaction, chat_id, String::from("AskingCity"))
+                .await
+                .unwrap();
+            modify_context(transaction, chat_id, String::from("SetDefaultCity"))
+                .await
+                .unwrap();
+        }
+        Err(_) => {
+            asking_search_mode(conf).await?;
+            modify_state(transaction, chat_id, String::from("AskingSearchMode"))
+                .await
+                .unwrap();
+            modify_context(transaction, chat_id, String::from("SetDefault"))
+                .await
+                .unwrap();
+        }
+    }
     Ok(())
 }
 struct Conf<'a> {
@@ -418,16 +548,42 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                 start(conf).await?;
             }
             Some("/city") => {
-                city(conf).await?;
+                formatted_city_message(conf).await?;
                 modify_state(&mut transaction, &chat_id, String::from("AskingCity"))
                     .await
                     .unwrap();
             }
+            Some("/default") => match get_client_city(&mut transaction, &chat_id).await {
+                Ok(formated) => {
+                    let v: Vec<&str> = formated.as_str().split(",").collect();
+                    let n = v.len();
+                    let city = v[0];
+                    let country = v[1];
+                    let mut state = "";
+                    if n == 3 {
+                        state = v[2];
+                    }
+                    get_weather(&conf, city, country, state, n).await?
+                }
+                Err(_) => {
+                    not_default_message(&conf).await?;
+                    set_city(conf, &mut transaction, &chat_id).await?;
+                }
+            },
             Some("/pattern") => {
                 pattern_city(conf).await?;
                 modify_state(&mut transaction, &chat_id, String::from("AskingPattern"))
                     .await
                     .unwrap();
+            }
+            Some("/set_search") => {
+                asking_search_mode(conf).await?;
+                modify_state(&mut transaction, &chat_id, String::from("AskingSearchMode"))
+                    .await
+                    .unwrap();
+            }
+            Some("/set_city") => {
+                set_city(conf, &mut transaction, &chat_id).await?;
             }
             _ => {}
         },
@@ -436,16 +592,16 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                 start(conf).await?;
             }
             Some("/cancel") => {
-                cancel_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("Initial"))
-                    .await
-                    .unwrap();
+                cancel(conf, &mut transaction).await?;
             }
             Some("/city") => {
-                city(conf).await?;
+                formatted_city_message(conf).await?;
             }
             Some(_) => {
                 city_response(conf).await?;
+                modify_context(&mut transaction, &chat_id, String::from("Initial"))
+                    .await
+                    .unwrap();
                 modify_state(&mut transaction, &chat_id, String::from("Initial"))
                     .await
                     .unwrap();
@@ -457,10 +613,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                 start(conf).await?;
             }
             Some("/cancel") => {
-                cancel_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("Initial"))
-                    .await
-                    .unwrap();
+                cancel(conf, &mut transaction).await?;
             }
             Some(text) => match find_city(conf).await {
                 Ok(_) => {
@@ -480,14 +633,14 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                 start(conf).await?;
             }
             Some("/cancel") => {
-                cancel_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("Initial"))
-                    .await
-                    .unwrap();
+                cancel(conf, &mut transaction).await?;
             }
             Some(text) => match text.parse::<usize>() {
                 Ok(_) => {
                     pattern_response(conf).await?;
+                    modify_context(&mut transaction, &chat_id, String::from("Initial"))
+                        .await
+                        .unwrap();
                     modify_state(&mut transaction, &chat_id, String::from("Initial"))
                         .await
                         .unwrap();
@@ -498,15 +651,92 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             },
             _ => {}
         },
-        "DefaultCity" => match pm.message.text.as_deref() {
+
+        "AskingSearchMode" => match pm.message.text.as_deref() {
             Some("/start") => {
                 start(conf).await?;
             }
             Some("/cancel") => {
-                cancel_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("Initial"))
-                    .await
-                    .unwrap();
+                cancel(conf, &mut transaction).await?;
+            }
+            Some(text) => {
+                searchmode_updated_message(&conf).await?;
+                match text.to_uppercase().as_str() {
+                    "Y" | "S" => {
+                        modify_pattern_search(&mut transaction, &chat_id, true)
+                            .await
+                            .unwrap();
+                        match get_client_context(&mut transaction, &chat_id)
+                            .await
+                            .unwrap()
+                            .as_str()
+                        {
+                            "SetDefault" => {
+                                modify_context(
+                                    &mut transaction,
+                                    &chat_id,
+                                    String::from("SetDefaultPattern"),
+                                )
+                                .await
+                                .unwrap();
+                                modify_state(
+                                    &mut transaction,
+                                    &chat_id,
+                                    String::from("AskingPattern"),
+                                )
+                                .await
+                                .unwrap();
+                                pattern_city(conf).await?;
+                            }
+                            _ => {
+                                modify_context(&mut transaction, &chat_id, String::from("Initial"))
+                                    .await
+                                    .unwrap();
+                                modify_state(&mut transaction, &chat_id, String::from("Initial"))
+                                    .await
+                                    .unwrap();
+                            }
+                        }
+                    }
+                    "N" => {
+                        modify_pattern_search(&mut transaction, &chat_id, false)
+                            .await
+                            .unwrap();
+                        match get_client_context(&mut transaction, &chat_id)
+                            .await
+                            .unwrap()
+                            .as_str()
+                        {
+                            "SetDefault" => {
+                                modify_context(
+                                    &mut transaction,
+                                    &chat_id,
+                                    String::from("SetDefaultCity"),
+                                )
+                                .await
+                                .unwrap();
+                                modify_state(
+                                    &mut transaction,
+                                    &chat_id,
+                                    String::from("AskingPattern"),
+                                )
+                                .await
+                                .unwrap();
+                                formatted_city_message(conf).await?;
+                            }
+                            _ => {
+                                modify_context(&mut transaction, &chat_id, String::from("Initial"))
+                                    .await
+                                    .unwrap();
+                                modify_state(&mut transaction, &chat_id, String::from("Initial"))
+                                    .await
+                                    .unwrap();
+                            }
+                        }
+                    }
+
+                    _ => {}
+                }
             }
             _ => {}
         },
