@@ -49,12 +49,22 @@ async fn send_message_client(
 async fn cancel(conf: Conf<'_>, transaction: &mut Transaction<'_>) -> Result<(), Error> {
     let text = format!("Hi, {}!\n Your operation was canceled", conf.username);
     send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
-    modify_context(transaction, conf.chat_id, String::from("Initial"))
-        .await
-        .unwrap();
-    modify_state(transaction, conf.chat_id, String::from("Initial"))
-        .await
-        .unwrap();
+    modify_context(
+        transaction,
+        conf.chat_id,
+        conf.user_id,
+        String::from("Initial"),
+    )
+    .await
+    .unwrap();
+    modify_state(
+        transaction,
+        conf.chat_id,
+        conf.user_id,
+        String::from("Initial"),
+    )
+    .await
+    .unwrap();
     Ok(())
 }
 // Function to get daily weather info from Open Weather Map
@@ -163,7 +173,7 @@ async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
         }
     });
     let mut transaction = client.transaction().await.unwrap();
-    match get_client_context(&mut transaction, conf.chat_id)
+    match get_client_context(&mut transaction, conf.chat_id, conf.user_id)
         .await
         .unwrap()
         .as_str()
@@ -181,7 +191,7 @@ async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
                     panic!("wtf is this number")
                 }
             };
-            modify_city(&mut transaction, conf.chat_id, record)
+            modify_city(&mut transaction, conf.chat_id, conf.user_id, record)
                 .await
                 .unwrap();
             transaction.commit().await.unwrap();
@@ -212,7 +222,7 @@ async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
         }
     });
     let mut transaction = client.transaction().await.unwrap();
-    let selected = get_client_selected(&mut transaction, conf.chat_id)
+    let selected = get_client_selected(&mut transaction, conf.chat_id, conf.user_id)
         .await
         .unwrap();
     let (name, country, state) = match get_city_row(&mut transaction, &selected, number).await {
@@ -224,7 +234,7 @@ async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
         _ => 3,
     };
 
-    match get_client_context(&mut transaction, conf.chat_id)
+    match get_client_context(&mut transaction, conf.chat_id, conf.user_id)
         .await
         .unwrap()
         .as_str()
@@ -244,7 +254,7 @@ async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
                     panic!("wtf is this number")
                 }
             };
-            modify_city(&mut transaction, conf.chat_id, record)
+            modify_city(&mut transaction, conf.chat_id, conf.user_id, record)
                 .await
                 .unwrap();
             transaction.commit().await.unwrap();
@@ -359,32 +369,48 @@ async fn set_city(
     conf: Conf<'_>,
     transaction: &mut Transaction<'_>,
     chat_id: &i64,
+    user_id: u64,
 ) -> Result<(), Error> {
-    match get_client_pattern_search(transaction, chat_id).await {
+    match get_client_pattern_search(transaction, chat_id, conf.user_id).await {
         Ok(true) => {
             pattern_city(conf).await?;
-            modify_state(transaction, chat_id, String::from("AskingPattern"))
+            modify_state(transaction, chat_id, user_id, String::from("AskingPattern"))
                 .await
                 .unwrap();
-            modify_context(transaction, chat_id, String::from("SetDefaultPattern"))
-                .await
-                .unwrap();
+            modify_context(
+                transaction,
+                chat_id,
+                user_id,
+                String::from("SetDefaultPattern"),
+            )
+            .await
+            .unwrap();
         }
         Ok(false) => {
             formatted_city_message(conf).await?;
-            modify_state(transaction, chat_id, String::from("AskingCity"))
+            modify_state(transaction, chat_id, user_id, String::from("AskingCity"))
                 .await
                 .unwrap();
-            modify_context(transaction, chat_id, String::from("SetDefaultCity"))
-                .await
-                .unwrap();
+            modify_context(
+                transaction,
+                chat_id,
+                user_id,
+                String::from("SetDefaultCity"),
+            )
+            .await
+            .unwrap();
         }
         Err(_) => {
             asking_search_mode(conf).await?;
-            modify_state(transaction, chat_id, String::from("AskingSearchMode"))
-                .await
-                .unwrap();
-            modify_context(transaction, chat_id, String::from("SetDefault"))
+            modify_state(
+                transaction,
+                chat_id,
+                user_id,
+                String::from("AskingSearchMode"),
+            )
+            .await
+            .unwrap();
+            modify_context(transaction, chat_id, user_id, String::from("SetDefault"))
                 .await
                 .unwrap();
         }
@@ -394,12 +420,13 @@ async fn set_city(
 struct Conf<'a> {
     api: &'a AsyncApi,
     chat_id: &'a i64,
+    user_id: u64,
     username: &'a String,
     message: Message,
     opwm_token: &'a String,
 }
 struct ProcessMessage {
-    me: String,
+    _me: String,
     api: AsyncApi,
     message: Message,
     opwm_token: String,
@@ -465,7 +492,7 @@ async fn bot_main() -> Result<(), Error> {
                         let me_clone = me.clone();
                         // What we need to Process a Message.
                         let pm = ProcessMessage {
-                            me: me_clone,
+                            _me: me_clone,
                             api: api_clone,
                             message: message,
                             opwm_token: token_clone,
@@ -500,6 +527,10 @@ async fn send_typing(message: &Message, api: &AsyncApi) -> Result<(), Error> {
 async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     // get the user that is writing the message
     let chat_id: i64 = (*pm.message.chat).id;
+    let user_id: u64 = match &pm.message.from.as_deref() {
+        Some(user) => user.id,
+        None => panic!("No user ???"),
+    };
     let user = match &pm.message.from.as_deref() {
         Some(user) => match &user.username {
             Some(username) => format!("@{}", (username).clone()),
@@ -522,18 +553,28 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     let state: String;
     // if user is not in the database, insert the user with Initial state
     // if it is , check its state.
-    if !is_in_db(&mut transaction, &chat_id).await.unwrap() {
-        insert_client(&mut transaction, &chat_id, user.clone(), &pm.keypair)
-            .await
-            .unwrap();
+    // TODO: change sequel queries to request user_id
+    if !is_in_db(&mut transaction, &chat_id, user_id).await.unwrap() {
+        insert_client(
+            &mut transaction,
+            &chat_id,
+            user_id,
+            user.clone(),
+            &pm.keypair,
+        )
+        .await
+        .unwrap();
         state = String::from("Initial");
     } else {
-        state = get_client_state(&mut transaction, &chat_id).await.unwrap();
+        state = get_client_state(&mut transaction, &chat_id, user_id)
+            .await
+            .unwrap();
     }
     // All what we need to handle the updates.
     let conf = Conf {
         api: &pm.api,
         chat_id: &chat_id,
+        user_id: user_id,
         username: &user,
         message: pm.message.clone(),
         opwm_token: &pm.opwm_token,
@@ -547,12 +588,17 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             }
             Some("/city") | Some("/city@RustWeather77Bot") => {
                 formatted_city_message(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("AskingCity"))
-                    .await
-                    .unwrap();
+                modify_state(
+                    &mut transaction,
+                    &chat_id,
+                    user_id,
+                    String::from("AskingCity"),
+                )
+                .await
+                .unwrap();
             }
             Some("/default") | Some("/default@RustWeather77Bot") => {
-                match get_client_city(&mut transaction, &chat_id).await {
+                match get_client_city(&mut transaction, &chat_id, user_id).await {
                     Ok(formated) => {
                         let v: Vec<&str> = formated.as_str().split(",").collect();
                         let n = v.len();
@@ -566,24 +612,34 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                     }
                     Err(_) => {
                         not_default_message(&conf).await?;
-                        set_city(conf, &mut transaction, &chat_id).await?;
+                        set_city(conf, &mut transaction, &chat_id, user_id).await?;
                     }
                 }
             }
             Some("/pattern") | Some("/pattern@RustWeather77Bot") => {
                 pattern_city(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("AskingPattern"))
-                    .await
-                    .unwrap();
+                modify_state(
+                    &mut transaction,
+                    &chat_id,
+                    user_id,
+                    String::from("AskingPattern"),
+                )
+                .await
+                .unwrap();
             }
             Some("/set_search") | Some("/set_search@RustWeather77Bot") => {
                 asking_search_mode(conf).await?;
-                modify_state(&mut transaction, &chat_id, String::from("AskingSearchMode"))
-                    .await
-                    .unwrap();
+                modify_state(
+                    &mut transaction,
+                    &chat_id,
+                    user_id,
+                    String::from("AskingSearchMode"),
+                )
+                .await
+                .unwrap();
             }
             Some("/set_city") | Some("/set_city@RustWeather77Bot") => {
-                set_city(conf, &mut transaction, &chat_id).await?;
+                set_city(conf, &mut transaction, &chat_id, user_id).await?;
             }
             _ => {}
         },
@@ -599,10 +655,10 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             }
             Some(_) => {
                 city_response(conf).await?;
-                modify_context(&mut transaction, &chat_id, String::from("Initial"))
+                modify_context(&mut transaction, &chat_id, user_id, String::from("Initial"))
                     .await
                     .unwrap();
-                modify_state(&mut transaction, &chat_id, String::from("Initial"))
+                modify_state(&mut transaction, &chat_id, user_id, String::from("Initial"))
                     .await
                     .unwrap();
             }
@@ -617,12 +673,17 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             }
             Some(text) => match find_city(conf).await {
                 Ok(_) => {
-                    modify_selected(&mut transaction, &chat_id, text.to_string())
+                    modify_selected(&mut transaction, &chat_id, user_id, text.to_string())
                         .await
                         .unwrap();
-                    modify_state(&mut transaction, &chat_id, String::from("AskingNumber"))
-                        .await
-                        .unwrap();
+                    modify_state(
+                        &mut transaction,
+                        &chat_id,
+                        user_id,
+                        String::from("AskingNumber"),
+                    )
+                    .await
+                    .unwrap();
                 }
                 Err(()) => {}
             },
@@ -638,10 +699,10 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             Some(text) => match text.parse::<usize>() {
                 Ok(_) => {
                     pattern_response(conf).await?;
-                    modify_context(&mut transaction, &chat_id, String::from("Initial"))
+                    modify_context(&mut transaction, &chat_id, user_id, String::from("Initial"))
                         .await
                         .unwrap();
-                    modify_state(&mut transaction, &chat_id, String::from("Initial"))
+                    modify_state(&mut transaction, &chat_id, user_id, String::from("Initial"))
                         .await
                         .unwrap();
                 }
@@ -663,10 +724,10 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                 searchmode_updated_message(&conf).await?;
                 match text.to_uppercase().as_str() {
                     "Y" | "S" => {
-                        modify_pattern_search(&mut transaction, &chat_id, true)
+                        modify_pattern_search(&mut transaction, &chat_id, user_id, true)
                             .await
                             .unwrap();
-                        match get_client_context(&mut transaction, &chat_id)
+                        match get_client_context(&mut transaction, &chat_id, user_id)
                             .await
                             .unwrap()
                             .as_str()
@@ -675,6 +736,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                                 modify_context(
                                     &mut transaction,
                                     &chat_id,
+                                    user_id,
                                     String::from("SetDefaultPattern"),
                                 )
                                 .await
@@ -682,6 +744,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                                 modify_state(
                                     &mut transaction,
                                     &chat_id,
+                                    user_id,
                                     String::from("AskingPattern"),
                                 )
                                 .await
@@ -689,20 +752,30 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                                 pattern_city(conf).await?;
                             }
                             _ => {
-                                modify_context(&mut transaction, &chat_id, String::from("Initial"))
-                                    .await
-                                    .unwrap();
-                                modify_state(&mut transaction, &chat_id, String::from("Initial"))
-                                    .await
-                                    .unwrap();
+                                modify_context(
+                                    &mut transaction,
+                                    &chat_id,
+                                    user_id,
+                                    String::from("Initial"),
+                                )
+                                .await
+                                .unwrap();
+                                modify_state(
+                                    &mut transaction,
+                                    &chat_id,
+                                    user_id,
+                                    String::from("Initial"),
+                                )
+                                .await
+                                .unwrap();
                             }
                         }
                     }
                     "N" => {
-                        modify_pattern_search(&mut transaction, &chat_id, false)
+                        modify_pattern_search(&mut transaction, &chat_id, user_id, false)
                             .await
                             .unwrap();
-                        match get_client_context(&mut transaction, &chat_id)
+                        match get_client_context(&mut transaction, &chat_id, user_id)
                             .await
                             .unwrap()
                             .as_str()
@@ -711,6 +784,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                                 modify_context(
                                     &mut transaction,
                                     &chat_id,
+                                    user_id,
                                     String::from("SetDefaultCity"),
                                 )
                                 .await
@@ -718,6 +792,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                                 modify_state(
                                     &mut transaction,
                                     &chat_id,
+                                    user_id,
                                     String::from("AskingPattern"),
                                 )
                                 .await
@@ -725,12 +800,22 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                                 formatted_city_message(conf).await?;
                             }
                             _ => {
-                                modify_context(&mut transaction, &chat_id, String::from("Initial"))
-                                    .await
-                                    .unwrap();
-                                modify_state(&mut transaction, &chat_id, String::from("Initial"))
-                                    .await
-                                    .unwrap();
+                                modify_context(
+                                    &mut transaction,
+                                    &chat_id,
+                                    user_id,
+                                    String::from("Initial"),
+                                )
+                                .await
+                                .unwrap();
+                                modify_state(
+                                    &mut transaction,
+                                    &chat_id,
+                                    user_id,
+                                    String::from("Initial"),
+                                )
+                                .await
+                                .unwrap();
                             }
                         }
                     }

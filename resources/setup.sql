@@ -6,13 +6,15 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'weather_bot')\gexec
 -- openssl genrsa -out key.pem 2048
 \c weather_bot --USE weather_bot;
 CREATE TABLE IF NOT EXISTS chat (
-  id BIGINT PRIMARY KEY, 
+  id BIGINT , 
+  user_id BYTEA , 
   "user" BYTEA NOT NULL, -- Bytea in order to store it encrypted
   state VARCHAR(20) NOT NULL, -- Initial
   before_state VARCHAR(20) NOT NULL, -- Initial
   selected VARCHAR(80),
   city VARCHAR(80), 
-  pattern_search BOOLEAN
+  pattern_search BOOLEAN,
+  PRIMARY KEY (id , user_id)
 );
 -- UPDATE chat SET state = 'Initial';
 -- SELECT name , country , state , lon , lat FROM chat WHERE UPPER(name) = UPPER('Madrid') AND UPPER(country) = UPPER('ES') 
