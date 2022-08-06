@@ -1,5 +1,3 @@
-use crate::db::*;
-use crate::json_parse::*;
 use frankenstein::api_params::{ChatAction, SendChatActionParams};
 use frankenstein::AsyncTelegramApi;
 use frankenstein::Error;
@@ -13,6 +11,8 @@ use openssl::rsa::Rsa;
 use std::env;
 use tokio::runtime;
 use tokio_postgres::{NoTls, Transaction};
+use weather_bot_rust::db::*;
+use weather_bot_rust::json_parse::*;
 
 // What we do if users write /start in any state.
 async fn start(conf: Conf<'_>) -> Result<(), Error> {

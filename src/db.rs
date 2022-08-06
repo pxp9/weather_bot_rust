@@ -4,7 +4,42 @@ use openssl::rsa::Padding;
 use std::include_str;
 use tokio_postgres::{Error, Row, Transaction};
 
-const async fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Vec<u8> {
+const CREATE_DB: &str = include_str!("queries/create_db.sql");
+const DROP_DB: &str = include_str!("queries/drop_db.sql");
+const CREATE_TABLE_CHAT: &str = include_str!("queries/create_table_chat.sql");
+const CREATE_TABLE_CITIES: &str = include_str!("queries/create_table_cities.sql");
+const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
+const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
+const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
+const IS_IN_DB: &str = include_str!("queries/is_in_db.sql");
+const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
+const MODIFY_CONTEXT: &str = include_str!("queries/modify_context.sql");
+const MODIFY_PATTERN_SEARCH: &str = include_str!("queries/modify_pattern_search.sql");
+const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
+const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
+const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
+const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
+
+async fn migrate(db_transaction: &mut Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(CREATE_TABLE_CHAT, &[]).await?;
+    db_transaction.execute(CREATE_TABLE_CITIES, &[]).await?;
+    Ok(())
+}
+async fn setup_db(mut db_transaction: Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(CREATE_DB, &[]).await?;
+    migrate(&mut db_transaction).await?;
+    db_transaction.commit().await
+}
+async fn rollback(db_transaction: Transaction<'_>) -> Result<(), Error> {
+    db_transaction.rollback().await
+}
+async fn drop_db(db_transaction: Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(CREATE_DB, &[]).await?;
+    db_transaction.commit().await
+}
+
+// Encrypt a String into a BYTEA
+async fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Vec<u8> {
     let mut encrypter = Encrypter::new(keypair).unwrap();
     encrypter.set_rsa_padding(Padding::PKCS1).unwrap();
     let st_bytes = some_string.as_bytes();
@@ -30,13 +65,7 @@ pub async fn is_in_db(
     user_id: u64,
 ) -> Result<bool, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    Ok(db_transaction
-        .execute(
-            "SELECT \"user\" , state , city FROM chat WHERE id = $1 AND user_id = $2",
-            &[chat_id, &bytes],
-        )
-        .await?
-        == 1)
+    Ok(db_transaction.execute(IS_IN_DB, &[chat_id, &bytes]).await? == 1)
 }
 pub async fn search_city(
     db_transaction: &mut Transaction<'_>,
@@ -44,15 +73,7 @@ pub async fn search_city(
     c: &String,
     s: &String,
 ) -> Result<(f64, f64, String, String, String), ()> {
-    let vec: Vec<Row> = db_transaction
-        .query(
-            "SELECT name , country , state , lon , lat FROM cities WHERE 
-        UPPER(name) = UPPER($1) AND UPPER(country) = UPPER($2)
-            AND UPPER(state) = UPPER($3)",
-            &[n, c, s],
-        )
-        .await
-        .unwrap();
+    let vec: Vec<Row> = db_transaction.query(SEARCH_CITY, &[n, c, s]).await.unwrap();
     if vec.len() == 1 {
         Ok((
             vec[0].get("lon"),
@@ -70,7 +91,7 @@ pub async fn get_client_selected(
     chat_id: &i64,
     user_id: u64,
 ) -> Result<String, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?[0];
+    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
     Ok(row.get("selected"))
 }
 
@@ -79,7 +100,7 @@ pub async fn get_client_city(
     chat_id: &i64,
     user_id: u64,
 ) -> Result<String, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?[0];
+    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
     row.try_get("city")
 }
 
@@ -88,7 +109,7 @@ pub async fn get_client_context(
     chat_id: &i64,
     user_id: u64,
 ) -> Result<String, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?[0];
+    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
     Ok(row.get("context"))
 }
 pub async fn get_client_state(
@@ -96,7 +117,7 @@ pub async fn get_client_state(
     chat_id: &i64,
     user_id: u64,
 ) -> Result<String, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?[0];
+    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
     Ok(row.get("state"))
 }
 
@@ -105,21 +126,18 @@ pub async fn get_client_pattern_search(
     chat_id: &i64,
     user_id: u64,
 ) -> Result<bool, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?[0];
+    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
     row.try_get("pattern_search")
 }
 pub async fn search_client(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
     user_id: u64,
-) -> Result<Vec<Row>, Error> {
+) -> Result<Row, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    let search = db_transaction
-        .prepare(
-            "SELECT \"user\" , state , city , selected , pattern_search , context FROM chat WHERE id = $1 AND user_id = $2",
-        )
-        .await?;
-    Ok(db_transaction.query(&search, &[chat_id, &bytes]).await?)
+    db_transaction
+        .query_one(SEARCH_CLIENT, &[chat_id, &bytes])
+        .await
 }
 pub async fn insert_client(
     db_transaction: &mut Transaction<'_>,
@@ -129,16 +147,14 @@ pub async fn insert_client(
     keypair: &PKey<Private>,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    let insert = db_transaction
-        .prepare("INSERT INTO chat (id , \"user\" , state , context , user_id ) VALUES ($1 , $2 , $3 , $4 , $5 )")
-        .await?;
     let user_encrypted = encrypt_string(user, keypair).await;
-    Ok(db_transaction
+
+    db_transaction
         .execute(
-            &insert,
+            INSERT_CLIENT,
             &[chat_id, &user_encrypted, &"Initial", &"Initial", &bytes],
         )
-        .await?)
+        .await
 }
 pub async fn delete_client(
     db_transaction: &mut Transaction<'_>,
@@ -146,10 +162,10 @@ pub async fn delete_client(
     user_id: u64,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    let delete = db_transaction
-        .prepare("DELETE FROM chat WHERE id = $1 AND user_id = $2")
-        .await?;
-    Ok(db_transaction.execute(&delete, &[chat_id, &bytes]).await?)
+
+    db_transaction
+        .execute(DELETE_CLIENT, &[chat_id, &bytes])
+        .await
 }
 pub async fn modify_state(
     db_transaction: &mut Transaction<'_>,
@@ -158,12 +174,10 @@ pub async fn modify_state(
     new_state: String,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    let modify_state = db_transaction
-        .prepare("UPDATE chat SET state = $1 WHERE id = $2 AND user_id = $3")
-        .await?;
-    Ok(db_transaction
-        .execute(&modify_state, &[&new_state, chat_id, &bytes])
-        .await?)
+
+    db_transaction
+        .execute(MODIFY_STATE, &[&new_state, chat_id, &bytes])
+        .await
 }
 
 pub async fn modify_context(
@@ -173,12 +187,10 @@ pub async fn modify_context(
     new_context: String,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    let modify_context = db_transaction
-        .prepare("UPDATE chat SET context = $1 WHERE id = $2 AND user_id = $3")
-        .await?;
-    Ok(db_transaction
-        .execute(&modify_context, &[&new_context, chat_id, &bytes])
-        .await?)
+
+    db_transaction
+        .execute(MODIFY_CONTEXT, &[&new_context, chat_id, &bytes])
+        .await
 }
 
 pub async fn modify_city(
@@ -188,12 +200,10 @@ pub async fn modify_city(
     new_city: String,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    let modify_city = db_transaction
-        .prepare("UPDATE chat SET city = $1 WHERE id = $2 AND user_id = $3")
-        .await?;
-    Ok(db_transaction
-        .execute(&modify_city, &[&new_city, chat_id, &bytes])
-        .await?)
+
+    db_transaction
+        .execute(MODIFY_CITY, &[&new_city, chat_id, &bytes])
+        .await
 }
 pub async fn modify_selected(
     db_transaction: &mut Transaction<'_>,
@@ -202,12 +212,10 @@ pub async fn modify_selected(
     new_selected: String,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    let modify_selected = db_transaction
-        .prepare("UPDATE chat SET selected = $1 WHERE id = $2 AND user_id = $3")
-        .await?;
-    Ok(db_transaction
-        .execute(&modify_selected, &[&new_selected, chat_id, &bytes])
-        .await?)
+
+    db_transaction
+        .execute(MODIFY_SELECTED, &[&new_selected, chat_id, &bytes])
+        .await
 }
 
 pub async fn modify_pattern_search(
@@ -217,25 +225,18 @@ pub async fn modify_pattern_search(
     search_mode: bool,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
-    let modify_pattern_search = db_transaction
-        .prepare("UPDATE chat SET pattern_search = $1 WHERE id = $2 AND user_id = $3")
-        .await?;
-    Ok(db_transaction
-        .execute(&modify_pattern_search, &[&search_mode, chat_id, &bytes])
-        .await?)
+
+    db_transaction
+        .execute(MODIFY_PATTERN_SEARCH, &[&search_mode, chat_id, &bytes])
+        .await
 }
 pub async fn get_city_by_pattern(
     db_transaction: &mut Transaction<'_>,
     city: &String,
 ) -> Result<Vec<Row>, Error> {
-    let get = db_transaction
-        .prepare(
-            "SELECT name , country , state  FROM cities WHERE UPPER(name) LIKE $1
-ORDER BY name , country",
-        )
-        .await?;
-    let st = ("%".to_string() + &city.to_uppercase()) + &"%".to_string();
-    Ok(db_transaction.query(&get, &[&st]).await?)
+    let st = format!("%{}%", city.to_uppercase());
+
+    db_transaction.query(GET_CITY_BY_PATTERN, &[&st]).await
 }
 pub async fn get_city_row(
     db_transaction: &mut Transaction<'_>,
