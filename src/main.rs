@@ -1,8 +1,5 @@
-mod json_parse;
+use crate::db::*;
 use crate::json_parse::*;
-mod database_manage;
-use crate::database_manage::*;
-mod tests;
 use frankenstein::api_params::{ChatAction, SendChatActionParams};
 use frankenstein::AsyncTelegramApi;
 use frankenstein::Error;
@@ -16,6 +13,7 @@ use openssl::rsa::Rsa;
 use std::env;
 use tokio::runtime;
 use tokio_postgres::{NoTls, Transaction};
+
 // What we do if users write /start in any state.
 async fn start(conf: Conf<'_>) -> Result<(), Error> {
     let text = format!(
