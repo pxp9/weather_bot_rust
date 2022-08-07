@@ -4,11 +4,18 @@ use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_queue::AsyncQueueable;
 use fang::NoTls;
 use std::env;
+use std::time::Duration;
+use tokio::time::sleep;
 
 pub struct Handler {
     client: ApiClient,
-    // TODO: use in memory queue
     queue: AsyncQueue<NoTls>,
+}
+
+impl Default for Handler {
+    fn default() -> Handler {
+        Self::new()
+    }
 }
 
 impl Handler {
@@ -32,6 +39,8 @@ impl Handler {
                     );
                 }
             }
+
+            sleep(Duration::from_secs(2)).await;
         }
     }
 

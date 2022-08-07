@@ -21,6 +21,12 @@ impl Default for ApiClient {
     }
 }
 
+impl Default for ApiClient {
+    fn default() -> ApiClient {
+        Self::new()
+    }
+}
+
 impl ApiClient {
     pub fn new() -> Self {
         let token = env::var("RUST_TELEGRAM_BOT_TOKEN").expect("RUST_TELEGRAM_BOT_TOKEN not set");
