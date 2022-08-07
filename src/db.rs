@@ -257,7 +257,9 @@ pub async fn get_city_row(
 #[cfg(test)]
 mod db_test {
     use crate::db::*;
+    use std::convert::TryInto;
     use tokio_postgres::{NoTls, Row};
+
     #[tokio::test]
     async fn test_modify_state() {
         // Pick a random user of the DB
@@ -276,26 +278,37 @@ mod db_test {
             .await
             .unwrap()[0];
         let chat_id: i64 = row.get("id");
+        let bytes: &[u8] = row.get("user_id");
+        let user_id: u64 = u64::from_be_bytes(bytes.try_into().expect("incorrect len"));
         // testing modify state
-        let n = modify_state(&mut transaction, &chat_id, String::from("AskingCity"))
-            .await
-            .unwrap();
+        let n = modify_state(
+            &mut transaction,
+            &chat_id,
+            user_id,
+            String::from("AskingCity"),
+        )
+        .await
+        .unwrap();
         assert_eq!(n, 1 as u64);
         transaction.commit().await.unwrap();
         let mut transaction = client.transaction().await.unwrap();
 
         // testing get state
-        let actual_state = get_client_state(&mut transaction, &chat_id).await.unwrap();
-        assert_eq!(actual_state, String::from("AskingCity"));
-
-        let n = modify_state(&mut transaction, &chat_id, String::from("Initial"))
+        let actual_state = get_client_state(&mut transaction, &chat_id, user_id)
             .await
             .unwrap();
-        assert_eq!(n, 1 as u64);
+        assert_eq!(actual_state, String::from("AskingCity"));
+
+        let n = modify_state(&mut transaction, &chat_id, user_id, String::from("Initial"))
+            .await
+            .unwrap();
+        assert_eq!(n, 1_u64);
         transaction.commit().await.unwrap();
 
         let mut transaction = client.transaction().await.unwrap();
-        let actual_state = get_client_state(&mut transaction, &chat_id).await.unwrap();
+        let actual_state = get_client_state(&mut transaction, &chat_id, user_id)
+            .await
+            .unwrap();
         assert_eq!(actual_state, String::from("Initial"));
         transaction.commit().await.unwrap();
     }
