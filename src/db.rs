@@ -289,7 +289,7 @@ mod db_test {
         )
         .await
         .unwrap();
-        assert_eq!(n, 1 as u64);
+        assert_eq!(n, 1_u64);
         transaction.commit().await.unwrap();
         let mut transaction = client.transaction().await.unwrap();
 
