@@ -9,6 +9,7 @@ use frankenstein::{AsyncApi, UpdateContent};
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
 use std::env;
+use std::fmt::Write;
 use tokio::runtime;
 use tokio_postgres::{NoTls, Transaction};
 use weather_bot_rust::db::*;
@@ -24,7 +25,7 @@ an star or if you would like to self run it, fork the proyect please.\n
 <a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot </a>",
         conf.username
     );
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 // Function to send a message to a client.
@@ -46,7 +47,7 @@ async fn send_message_client(
 // What we do if users write /cancel in any state
 async fn cancel(conf: Conf<'_>, transaction: &mut Transaction<'_>) -> Result<(), Error> {
     let text = format!("Hi, {}!\n Your operation was canceled", conf.username);
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     modify_context(
         transaction,
         conf.chat_id,
@@ -113,7 +114,7 @@ async fn get_weather(
             conf.username,
             conf.message.text.as_ref().unwrap()
         );
-        send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+        send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
 
         return Ok(());
     }
@@ -140,19 +141,19 @@ async fn get_weather(
         ),
         _ => panic!("wtf is this ?"),
     };
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 // What we do if users write a city in correct format that is in the DB in AskingCity state.
 async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
-    let v: Vec<&str> = conf.message.text.as_ref().unwrap().split(",").collect();
+    let v: Vec<&str> = conf.message.text.as_ref().unwrap().split(',').collect();
     let n = v.len();
     if n < 2 {
         let text = format!(
             "Hi, {}! Write it in the correct format please like this:\n Madrid,ES or New York,US,NY",
             conf.username
         );
-        send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+        send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
         return Ok(());
     }
     let city = v[0].trim();
@@ -270,7 +271,7 @@ async fn formatted_city_message(conf: Conf<'_>) -> Result<(), Error> {
         "Hi, {}! Write city and country acronym like this:\nMadrid,ES\nor for US states specify like this:\nNew York,US,NY being city,country,state",
         conf.username
     );
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 // What we do if users write /pattern in Initial state.
@@ -279,7 +280,7 @@ async fn pattern_city(conf: Conf<'_>) -> Result<(), Error> {
         "Hi, {}! Write a city , let me see if i find it",
         conf.username
     );
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 async fn asking_search_mode(conf: Conf<'_>) -> Result<(), Error> {
@@ -287,13 +288,13 @@ async fn asking_search_mode(conf: Conf<'_>) -> Result<(), Error> {
         "Hi, {}! Would you like to set the city with pattern search ? y/n",
         conf.username
     );
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 
 async fn not_default_message(conf: &Conf<'_>) -> Result<(), Error> {
     let text = format!("Hi, {}! Setting default city...", conf.username);
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 // What we do if users write a city in AskingPattern state.
@@ -309,15 +310,15 @@ async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
         }
     });
     let mut transaction = client.transaction().await.unwrap();
-    let vec = get_city_by_pattern(&mut transaction, &pattern)
+    let vec = get_city_by_pattern(&mut transaction, pattern)
         .await
         .unwrap();
-    if vec.len() == 0 || vec.len() > 30 {
+    if vec.is_empty() || vec.len() > 30 {
         let text = format!(
             "Hi, {}! Your city {} was not found , try again",
             conf.username, pattern,
         );
-        send_message_client(conf.chat_id, text, &conf.message, &conf.api)
+        send_message_client(conf.chat_id, text, &conf.message, conf.api)
             .await
             .unwrap();
         return Err(());
@@ -331,14 +332,14 @@ async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
         let name: String = row.get("name");
         let country: String = row.get("country");
         let state: String = row.get("state");
-        if state == "" {
-            text += &format!("{}. {},{}\n", i, name, country);
+        if state.is_empty() {
+            writeln!(&mut text, "{}. {},{}", i, name, country).unwrap();
         } else {
-            text += &format!("{}. {},{},{}\n", i, name, country, state);
+            writeln!(&mut text, "{}. {},{},{}", i, name, country, state).unwrap();
         }
         i += 1;
     }
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api)
+    send_message_client(conf.chat_id, text, &conf.message, conf.api)
         .await
         .unwrap();
     Ok(())
@@ -349,18 +350,18 @@ async fn not_number_message(conf: Conf<'_>) -> Result<(), Error> {
         "Hi, {}! That's not a positive number in the range, try again",
         conf.username
     );
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 async fn city_updated_message(conf: &Conf<'_>) -> Result<(), Error> {
     let text = format!("Hi, {}! Your default city was updated", conf.username);
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 
 async fn searchmode_updated_message(conf: &Conf<'_>) -> Result<(), Error> {
     let text = format!("Hi, {}! Your search mode was updated", conf.username);
-    send_message_client(conf.chat_id, text, &conf.message, &conf.api).await?;
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
 async fn set_city(
@@ -492,7 +493,7 @@ async fn bot_main() -> Result<(), Error> {
                         let pm = ProcessMessage {
                             _me: me_clone,
                             api: api_clone,
-                            message: message,
+                            message,
                             opwm_token: token_clone,
                             keypair: keypair_clone,
                         };
@@ -572,7 +573,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     let conf = Conf {
         api: &pm.api,
         chat_id: &chat_id,
-        user_id: user_id,
+        user_id,
         username: &user,
         message: pm.message.clone(),
         opwm_token: &pm.opwm_token,
@@ -598,7 +599,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             Some("/default") | Some("/default@RustWeather77Bot") => {
                 match get_client_city(&mut transaction, &chat_id, user_id).await {
                     Ok(formated) => {
-                        let v: Vec<&str> = formated.as_str().split(",").collect();
+                        let v: Vec<&str> = formated.as_str().split(',').collect();
                         let n = v.len();
                         let city = v[0];
                         let country = v[1];
@@ -669,8 +670,8 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
             Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf, &mut transaction).await?;
             }
-            Some(text) => match find_city(conf).await {
-                Ok(_) => {
+            Some(text) => {
+                if (find_city(conf).await).is_ok() {
                     modify_selected(&mut transaction, &chat_id, user_id, text.to_string())
                         .await
                         .unwrap();
@@ -683,8 +684,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
                     .await
                     .unwrap();
                 }
-                Err(()) => {}
-            },
+            }
             _ => {}
         },
         "AskingNumber" => match pm.message.text.as_deref() {

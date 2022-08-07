@@ -15,6 +15,11 @@ pub struct ApiClient {
     update_params: GetUpdatesParams,
     buffer: VecDeque<Update>,
 }
+impl Default for ApiClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ApiClient {
     pub fn new() -> Self {

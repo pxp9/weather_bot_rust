@@ -4,10 +4,10 @@ use openssl::rsa::Padding;
 use std::include_str;
 use tokio_postgres::{Error, Row, Transaction};
 
-const CREATE_DB: &str = include_str!("queries/create_db.sql");
-const DROP_DB: &str = include_str!("queries/drop_db.sql");
-const CREATE_TABLE_CHAT: &str = include_str!("queries/create_table_chat.sql");
-const CREATE_TABLE_CITIES: &str = include_str!("queries/create_table_cities.sql");
+const _CREATE_DB: &str = include_str!("queries/create_db.sql");
+const _DROP_DB: &str = include_str!("queries/drop_db.sql");
+const _CREATE_TABLE_CHAT: &str = include_str!("queries/create_table_chat.sql");
+const _CREATE_TABLE_CITIES: &str = include_str!("queries/create_table_cities.sql");
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
@@ -20,21 +20,21 @@ const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
 
-async fn migrate(db_transaction: &mut Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(CREATE_TABLE_CHAT, &[]).await?;
-    db_transaction.execute(CREATE_TABLE_CITIES, &[]).await?;
+async fn _migrate(db_transaction: &mut Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(_CREATE_TABLE_CHAT, &[]).await?;
+    db_transaction.execute(_CREATE_TABLE_CITIES, &[]).await?;
     Ok(())
 }
-async fn setup_db(mut db_transaction: Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(CREATE_DB, &[]).await?;
-    migrate(&mut db_transaction).await?;
+async fn _setup_db(mut db_transaction: Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(_CREATE_DB, &[]).await?;
+    _migrate(&mut db_transaction).await?;
     db_transaction.commit().await
 }
-async fn rollback(db_transaction: Transaction<'_>) -> Result<(), Error> {
+async fn _rollback(db_transaction: Transaction<'_>) -> Result<(), Error> {
     db_transaction.rollback().await
 }
-async fn drop_db(db_transaction: Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(CREATE_DB, &[]).await?;
+async fn _drop_db(db_transaction: Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(_DROP_DB, &[]).await?;
     db_transaction.commit().await
 }
 
@@ -43,15 +43,15 @@ async fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Vec<u8>
     let mut encrypter = Encrypter::new(keypair).unwrap();
     encrypter.set_rsa_padding(Padding::PKCS1).unwrap();
     let st_bytes = some_string.as_bytes();
-    let len: usize = encrypter.encrypt_len(&st_bytes).unwrap();
+    let len: usize = encrypter.encrypt_len(st_bytes).unwrap();
     let mut encrypted = vec![0; len];
     let encrypted_len = encrypter.encrypt(st_bytes, &mut encrypted).unwrap();
     encrypted.truncate(encrypted_len);
     encrypted
 }
 // Decrypt a BYTEA into a String
-async fn decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> String {
-    let mut decrypter = Decrypter::new(&keypair).unwrap();
+async fn _decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> String {
+    let mut decrypter = Decrypter::new(keypair).unwrap();
     decrypter.set_rsa_padding(Padding::PKCS1).unwrap();
     let buffer_len = decrypter.decrypt_len(encrypted).unwrap();
     let mut decrypted = vec![0; buffer_len];
@@ -232,7 +232,7 @@ pub async fn modify_pattern_search(
 }
 pub async fn get_city_by_pattern(
     db_transaction: &mut Transaction<'_>,
-    city: &String,
+    city: &str,
 ) -> Result<Vec<Row>, Error> {
     let st = format!("%{}%", city.to_uppercase());
 
@@ -240,7 +240,7 @@ pub async fn get_city_by_pattern(
 }
 pub async fn get_city_row(
     db_transaction: &mut Transaction<'_>,
-    city: &String,
+    city: &str,
     n: usize,
 ) -> Result<(String, String, String), ()> {
     let vec: Vec<Row> = get_city_by_pattern(db_transaction, city).await.unwrap();
