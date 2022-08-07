@@ -1,40 +1,58 @@
 use openssl::encrypt::{Decrypter, Encrypter};
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Padding;
+use postgres_types::{FromSql, ToSql};
 use std::include_str;
 use tokio_postgres::{Error, Row, Transaction};
 
-const _CREATE_DB: &str = include_str!("queries/create_db.sql");
-const _DROP_DB: &str = include_str!("queries/drop_db.sql");
-const _CREATE_TABLE_CHAT: &str = include_str!("queries/create_table_chat.sql");
-const _CREATE_TABLE_CITIES: &str = include_str!("queries/create_table_cities.sql");
+#[derive(Debug, Eq, PartialEq, Clone, ToSql, FromSql)]
+#[postgres(name = "client_state")]
+pub enum ClientState {
+    #[postgres(name = "initial")]
+    Initial,
+    #[postgres(name = "pattern")]
+    Pattern,
+    #[postgres(name = "number")]
+    Number,
+    #[postgres(name = "set_city")]
+    SetCity,
+}
+
+const CREATE_ENUM_TYPE: &str = include_str!("queries/create_enum_type.sql");
+const CREATE_DB: &str = include_str!("queries/create_db.sql");
+const DROP_DB: &str = include_str!("queries/drop_db.sql");
+const CREATE_TABLE_CHAT: &str = include_str!("queries/create_table_chat.sql");
+const CREATE_TABLE_CITIES: &str = include_str!("queries/create_table_cities.sql");
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
 const IS_IN_DB: &str = include_str!("queries/is_in_db.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
-const MODIFY_CONTEXT: &str = include_str!("queries/modify_context.sql");
-const MODIFY_PATTERN_SEARCH: &str = include_str!("queries/modify_pattern_search.sql");
+const MODIFY_BEFORE_STATE: &str = include_str!("queries/modify_before_state.sql");
 const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
 const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
 
-async fn _migrate(db_transaction: &mut Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(_CREATE_TABLE_CHAT, &[]).await?;
-    db_transaction.execute(_CREATE_TABLE_CITIES, &[]).await?;
+async fn migrate(db_transaction: &mut Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(CREATE_ENUM_TYPE, &[]).await?;
+    db_transaction.execute(CREATE_TABLE_CHAT, &[]).await?;
+    db_transaction.execute(CREATE_TABLE_CITIES, &[]).await?;
     Ok(())
 }
-async fn _setup_db(mut db_transaction: Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(_CREATE_DB, &[]).await?;
-    _migrate(&mut db_transaction).await?;
+
+async fn setup_db(mut db_transaction: Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(CREATE_DB, &[]).await?;
+    migrate(&mut db_transaction).await?;
     db_transaction.commit().await
 }
-async fn _rollback(db_transaction: Transaction<'_>) -> Result<(), Error> {
+
+async fn rollback(db_transaction: Transaction<'_>) -> Result<(), Error> {
     db_transaction.rollback().await
 }
-async fn _drop_db(db_transaction: Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(_DROP_DB, &[]).await?;
+
+async fn drop_db(db_transaction: Transaction<'_>) -> Result<(), Error> {
+    db_transaction.execute(DROP_DB, &[]).await?;
     db_transaction.commit().await
 }
 
@@ -49,8 +67,9 @@ async fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Vec<u8>
     encrypted.truncate(encrypted_len);
     encrypted
 }
+
 // Decrypt a BYTEA into a String
-async fn _decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> String {
+async fn decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> String {
     let mut decrypter = Decrypter::new(keypair).unwrap();
     decrypter.set_rsa_padding(Padding::PKCS1).unwrap();
     let buffer_len = decrypter.decrypt_len(encrypted).unwrap();
@@ -59,6 +78,7 @@ async fn _decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> String {
     decrypted.truncate(decrypted_len);
     String::from_utf8(decrypted).unwrap()
 }
+
 pub async fn is_in_db(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
@@ -67,6 +87,7 @@ pub async fn is_in_db(
     let bytes = user_id.to_le_bytes().to_vec();
     Ok(db_transaction.execute(IS_IN_DB, &[chat_id, &bytes]).await? == 1)
 }
+
 pub async fn search_city(
     db_transaction: &mut Transaction<'_>,
     n: &String,
@@ -86,6 +107,7 @@ pub async fn search_city(
         Err(())
     }
 }
+
 pub async fn get_client_selected(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
@@ -104,13 +126,13 @@ pub async fn get_client_city(
     row.try_get("city")
 }
 
-pub async fn get_client_context(
+pub async fn get_client_before_state(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
     user_id: u64,
 ) -> Result<String, Error> {
     let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
-    Ok(row.get("context"))
+    Ok(row.get("before_state"))
 }
 pub async fn get_client_state(
     db_transaction: &mut Transaction<'_>,
@@ -121,14 +143,6 @@ pub async fn get_client_state(
     Ok(row.get("state"))
 }
 
-pub async fn get_client_pattern_search(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-) -> Result<bool, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
-    row.try_get("pattern_search")
-}
 pub async fn search_client(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
@@ -152,7 +166,13 @@ pub async fn insert_client(
     db_transaction
         .execute(
             INSERT_CLIENT,
-            &[chat_id, &user_encrypted, &"Initial", &"Initial", &bytes],
+            &[
+                chat_id,
+                &user_encrypted,
+                &ClientState::Initial,
+                &ClientState::Initial,
+                &bytes,
+            ],
         )
         .await
 }
@@ -171,7 +191,7 @@ pub async fn modify_state(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
     user_id: u64,
-    new_state: String,
+    new_state: ClientState,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
 
@@ -180,16 +200,16 @@ pub async fn modify_state(
         .await
 }
 
-pub async fn modify_context(
+pub async fn modify_before_state(
     db_transaction: &mut Transaction<'_>,
     chat_id: &i64,
     user_id: u64,
-    new_context: String,
+    new_state: ClientState,
 ) -> Result<u64, Error> {
     let bytes = user_id.to_le_bytes().to_vec();
 
     db_transaction
-        .execute(MODIFY_CONTEXT, &[&new_context, chat_id, &bytes])
+        .execute(MODIFY_BEFORE_STATE, &[&new_state, chat_id, &bytes])
         .await
 }
 
@@ -218,18 +238,6 @@ pub async fn modify_selected(
         .await
 }
 
-pub async fn modify_pattern_search(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-    search_mode: bool,
-) -> Result<u64, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-
-    db_transaction
-        .execute(MODIFY_PATTERN_SEARCH, &[&search_mode, chat_id, &bytes])
-        .await
-}
 pub async fn get_city_by_pattern(
     db_transaction: &mut Transaction<'_>,
     city: &str,

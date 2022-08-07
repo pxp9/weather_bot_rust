@@ -12,7 +12,7 @@ use std::env;
 use std::fmt::Write;
 use tokio::runtime;
 use tokio_postgres::{NoTls, Transaction};
-use weather_bot_rust::db::*;
+use weather_bot_rust::database_manage::*;
 use weather_bot_rust::json_parse::*;
 
 // What we do if users write /start in any state.
