@@ -287,6 +287,8 @@ struct ProcessMessage {
 }
 
 fn main() {
+    pretty_env_logger::init();
+
     let rt = runtime::Builder::new_multi_thread()
         .worker_threads(6)
         .thread_name("my thread")
