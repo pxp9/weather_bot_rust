@@ -89,7 +89,7 @@ Run in command line : *cargo run*
 $ cargo run
 ```
 
-## Stop Dcoker
+## Stop Docker
 ```
 $ make stop 
 ```
