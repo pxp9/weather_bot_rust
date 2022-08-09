@@ -12,6 +12,7 @@ use std::env;
 use std::fmt::Write;
 use thiserror::Error;
 use tokio::runtime;
+use weather_bot_rust::db::BotDbError;
 use weather_bot_rust::db::ClientState;
 use weather_bot_rust::db::DbController;
 use weather_bot_rust::json_parse::*;
@@ -19,9 +20,11 @@ use weather_bot_rust::json_parse::*;
 #[derive(Debug, Error)]
 pub enum BotError {
     #[error(transparent)]
+    MessageError(#[from] std::fmt::Error),
+    #[error(transparent)]
     TelegramError(#[from] frankenstein::Error),
     #[error(transparent)]
-    DbError(#[from] weather_bot_rust::db::BotDbError),
+    DbError(#[from] BotDbError),
 }
 
 // What we do if users write /start in any state.
@@ -207,24 +210,18 @@ async fn not_default_message(conf: &Conf<'_>) -> Result<(), BotError> {
     Ok(())
 }
 // What we do if users write a city in AskingPattern state.
-async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
+async fn find_city(conf: Conf<'_>) -> Result<(), BotError> {
     let pattern = conf.message.text.as_ref().unwrap();
 
-    let vec = conf
-        .db_controller
-        .get_city_by_pattern(pattern)
-        .await
-        .unwrap();
+    let vec = conf.db_controller.get_city_by_pattern(pattern).await?;
 
     if vec.is_empty() || vec.len() > 30 {
         let text = format!(
             "Hi, {}! Your city {} was not found , try again",
             conf.username, pattern,
         );
-        send_message_client(conf.chat_id, text, &conf.message, conf.api)
-            .await
-            .unwrap();
-        return Err(());
+        send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
+        return Err(BotError::DbError(BotDbError::CityNotFoundError));
     }
 
     let mut i = 1;
@@ -237,15 +234,13 @@ async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
         let country: String = row.get("country");
         let state: String = row.get("state");
         if state.is_empty() {
-            writeln!(&mut text, "{}. {},{}", i, name, country).unwrap();
+            writeln!(&mut text, "{}. {},{}", i, name, country)?;
         } else {
-            writeln!(&mut text, "{}. {},{},{}", i, name, country, state).unwrap();
+            writeln!(&mut text, "{}. {},{},{}", i, name, country, state)?;
         }
         i += 1;
     }
-    send_message_client(conf.chat_id, text, &conf.message, conf.api)
-        .await
-        .unwrap();
+    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
 
     Ok(())
 }
