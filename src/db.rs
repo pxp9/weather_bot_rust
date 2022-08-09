@@ -43,11 +43,6 @@ pub enum ClientState {
 }
 
 const URL: &str = "postgres://postgres:postgres@localhost/weather_bot";
-const CREATE_ENUM_TYPE: &str = include_str!("queries/create_enum_type.sql");
-const CREATE_DB: &str = include_str!("queries/create_db.sql");
-const DROP_DB: &str = include_str!("queries/drop_db.sql");
-const CREATE_TABLE_CHAT: &str = include_str!("queries/create_table_chat.sql");
-const CREATE_TABLE_CITIES: &str = include_str!("queries/create_table_cities.sql");
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
@@ -60,13 +55,6 @@ const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
 
 impl DbController {
-    async fn migrate(db_transaction: &mut Transaction<'_>) -> Result<(), BotDbError> {
-        db_transaction.execute(CREATE_ENUM_TYPE, &[]).await?;
-        db_transaction.execute(CREATE_TABLE_CHAT, &[]).await?;
-        db_transaction.execute(CREATE_TABLE_CITIES, &[]).await?;
-        Ok(())
-    }
-
     async fn pool(url: &str) -> Result<Pool<PostgresConnectionManager<NoTls>>, BotDbError> {
         let pg_mgr = PostgresConnectionManager::new_from_stringlike(url, NoTls)?;
 
@@ -78,30 +66,8 @@ impl DbController {
         Ok(DbController { pool: pl })
     }
 
-    pub async fn setup_db() -> Result<(), BotDbError> {
-        let pl = Self::pool("postgres://postgres:postgres@localhost").await?;
-        let mut connection = pl.get().await?;
-        let db_transaction = connection.transaction().await?;
-        db_transaction.execute(CREATE_DB, &[]).await?;
-        db_transaction.commit().await?;
-
-        let pl = Self::pool(URL).await?;
-        let mut connection = pl.get().await?;
-        let mut db_transaction = connection.transaction().await?;
-        Self::migrate(&mut db_transaction).await?;
-        Ok(db_transaction.commit().await?)
-    }
-
     pub async fn rollback(db_transaction: Transaction<'_>) -> Result<(), BotDbError> {
         Ok(db_transaction.rollback().await?)
-    }
-
-    pub async fn drop_db(&self) -> Result<(), BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
-
-        db_transaction.execute(DROP_DB, &[]).await?;
-        Ok(db_transaction.commit().await?)
     }
 
     // Encrypt a String into a BYTEA
@@ -358,7 +324,9 @@ impl DbController {
 #[cfg(test)]
 mod db_test {
     use crate::db::*;
-    use bb8_postgres::tokio_postgres::{NoTls, Row};
+    use bb8_postgres::tokio_postgres::Row;
+    use openssl::pkey::PKey;
+    use openssl::rsa::Rsa;
     use std::convert::TryInto;
 
     #[tokio::test]
@@ -368,6 +336,17 @@ mod db_test {
         let mut connection = db_controller.pool.get().await.unwrap();
         let transaction = connection.transaction().await.unwrap();
 
+        let binary_file = std::fs::read("./resources/key.pem").unwrap();
+        let keypair = Rsa::private_key_from_pem(&binary_file).unwrap();
+        let keypair = PKey::from_rsa(keypair).unwrap();
+
+        let n = db_controller
+            .insert_client(&111111, 1111111, String::from("@ItzPXP9"), &keypair)
+            .await
+            .unwrap();
+
+        assert_eq!(n, 1_u64);
+
         let row: &Row = &transaction
             .query_one("SELECT * FROM chat LIMIT 1", &[])
             .await
@@ -376,8 +355,12 @@ mod db_test {
         transaction.commit().await.unwrap();
 
         let chat_id: i64 = row.get("id");
+
         let bytes: &[u8] = row.get("user_id");
-        let user_id: u64 = u64::from_be_bytes(bytes.try_into().expect("incorrect len"));
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(&bytes);
+        let user_id = as_u64_le(&arr);
+
         // testing modify state
 
         let n = db_controller
@@ -407,5 +390,18 @@ mod db_test {
             .unwrap();
 
         assert_eq!(actual_state, ClientState::Initial);
+
+        let n = db_controller.delete_client(&111111, 1111111).await.unwrap();
+        assert_eq!(n, 1_u64);
+    }
+    fn as_u64_le(array: &[u8; 8]) -> u64 {
+        ((array[0] as u64) << 0)
+            + ((array[1] as u64) << 8)
+            + ((array[2] as u64) << 16)
+            + ((array[3] as u64) << 24)
+            + ((array[4] as u64) << 32)
+            + ((array[5] as u64) << 40)
+            + ((array[6] as u64) << 48)
+            + ((array[7] as u64) << 56)
     }
 }
