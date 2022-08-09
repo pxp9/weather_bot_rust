@@ -1,3 +1,4 @@
+use bb8_postgres::tokio_postgres::{NoTls, Transaction};
 use frankenstein::api_params::{ChatAction, SendChatActionParams};
 use frankenstein::AsyncTelegramApi;
 use frankenstein::Error;
@@ -11,7 +12,6 @@ use openssl::rsa::Rsa;
 use std::env;
 use std::fmt::Write;
 use tokio::runtime;
-use tokio_postgres::{NoTls, Transaction};
 use weather_bot_rust::database_manage::*;
 use weather_bot_rust::json_parse::*;
 
@@ -74,10 +74,12 @@ async fn get_weather(
     state: &str,
     n: usize,
 ) -> Result<(), Error> {
-    let (mut client, connection) =
-        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
-            .await
-            .unwrap();
+    let (mut client, connection) = bb8_postgres::tokio_postgres::connect(
+        "host=localhost dbname=weather_bot user=postgres",
+        NoTls,
+    )
+    .await
+    .unwrap();
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
@@ -162,10 +164,12 @@ async fn city_response(conf: Conf<'_>) -> Result<(), Error> {
     if n == 3 {
         state = v[2].to_uppercase();
     }
-    let (mut client, connection) =
-        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
-            .await
-            .unwrap();
+    let (mut client, connection) = bb8_postgres::tokio_postgres::connect(
+        "host=localhost dbname=weather_bot user=postgres",
+        NoTls,
+    )
+    .await
+    .unwrap();
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
@@ -211,10 +215,12 @@ async fn pattern_response(conf: Conf<'_>) -> Result<(), Error> {
         .unwrap()
         .parse::<usize>()
         .unwrap();
-    let (mut client, connection) =
-        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
-            .await
-            .unwrap();
+    let (mut client, connection) = bb8_postgres::tokio_postgres::connect(
+        "host=localhost dbname=weather_bot user=postgres",
+        NoTls,
+    )
+    .await
+    .unwrap();
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
@@ -300,10 +306,12 @@ async fn not_default_message(conf: &Conf<'_>) -> Result<(), Error> {
 // What we do if users write a city in AskingPattern state.
 async fn find_city(conf: Conf<'_>) -> Result<(), ()> {
     let pattern = conf.message.text.as_ref().unwrap();
-    let (mut client, connection) =
-        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
-            .await
-            .unwrap();
+    let (mut client, connection) = bb8_postgres::tokio_postgres::connect(
+        "host=localhost dbname=weather_bot user=postgres",
+        NoTls,
+    )
+    .await
+    .unwrap();
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
@@ -458,10 +466,12 @@ async fn bot_main() -> Result<(), Error> {
     let me = api.get_me().await?.result.username.unwrap();
     // Cities are in database ?
     // See if we have the cities in db
-    let (mut client, connection) =
-        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
-            .await
-            .unwrap();
+    let (mut client, connection) = bb8_postgres::tokio_postgres::connect(
+        "host=localhost dbname=weather_bot user=postgres",
+        NoTls,
+    )
+    .await
+    .unwrap();
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
@@ -539,10 +549,12 @@ async fn process_message(pm: ProcessMessage) -> Result<(), Error> {
     };
     send_typing(&pm.message, &pm.api).await?;
     // check if the user is in the database.
-    let (mut client, connection) =
-        tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
-            .await
-            .unwrap();
+    let (mut client, connection) = bb8_postgres::tokio_postgres::connect(
+        "host=localhost dbname=weather_bot user=postgres",
+        NoTls,
+    )
+    .await
+    .unwrap();
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);

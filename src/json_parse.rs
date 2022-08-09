@@ -1,7 +1,7 @@
 use serde_json::Value;
 //use std::collections::HashMap;
+use bb8_postgres::tokio_postgres::{Error, Transaction};
 use std::fs;
-use tokio_postgres::{Error, Transaction};
 // Realmente lo suyo es meter las ciudades en la bbdd :D
 pub async fn read_json_cities(transaction: &mut Transaction<'_>) -> Result<(), Error> {
     let content = fs::read_to_string("resources/city.list.json").unwrap();

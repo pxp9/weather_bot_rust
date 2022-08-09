@@ -1,9 +1,31 @@
+use bb8_postgres::bb8::Pool;
+use bb8_postgres::bb8::RunError;
+use bb8_postgres::tokio_postgres::tls::NoTls;
+use bb8_postgres::tokio_postgres::{Row, Transaction};
+use bb8_postgres::PostgresConnectionManager;
 use openssl::encrypt::{Decrypter, Encrypter};
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Padding;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
-use tokio_postgres::{Error, Row, Transaction};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum BotDbError {
+    #[error(transparent)]
+    PoolError(#[from] RunError<bb8_postgres::tokio_postgres::Error>),
+    #[error(transparent)]
+    PgError(#[from] bb8_postgres::tokio_postgres::Error),
+    #[error(transparent)]
+    SerdeError(#[from] serde_json::Error),
+    #[error("City not found")]
+    CityNotFoundError,
+}
+
+#[derive(Debug, Clone)]
+pub struct DbController {
+    pool: Pool<PostgresConnectionManager<NoTls>>,
+}
 
 #[derive(Debug, Eq, PartialEq, Clone, ToSql, FromSql)]
 #[postgres(name = "client_state")]
@@ -18,6 +40,7 @@ pub enum ClientState {
     SetCity,
 }
 
+const URL: &str = "postgres://postgres:postgres@localhost/weather_bot";
 const CREATE_ENUM_TYPE: &str = include_str!("queries/create_enum_type.sql");
 const CREATE_DB: &str = include_str!("queries/create_db.sql");
 const DROP_DB: &str = include_str!("queries/drop_db.sql");
@@ -34,234 +57,293 @@ const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
 
-async fn migrate(db_transaction: &mut Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(CREATE_ENUM_TYPE, &[]).await?;
-    db_transaction.execute(CREATE_TABLE_CHAT, &[]).await?;
-    db_transaction.execute(CREATE_TABLE_CITIES, &[]).await?;
-    Ok(())
-}
+impl DbController {
+    async fn migrate(db_transaction: &mut Transaction<'_>) -> Result<(), BotDbError> {
+        db_transaction.execute(CREATE_ENUM_TYPE, &[]).await?;
+        db_transaction.execute(CREATE_TABLE_CHAT, &[]).await?;
+        db_transaction.execute(CREATE_TABLE_CITIES, &[]).await?;
+        Ok(())
+    }
 
-async fn setup_db(mut db_transaction: Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(CREATE_DB, &[]).await?;
-    migrate(&mut db_transaction).await?;
-    db_transaction.commit().await
-}
+    async fn pool(url: &str) -> Result<Pool<PostgresConnectionManager<NoTls>>, BotDbError> {
+        let pg_mgr = PostgresConnectionManager::new_from_stringlike(url, NoTls).unwrap();
 
-async fn rollback(db_transaction: Transaction<'_>) -> Result<(), Error> {
-    db_transaction.rollback().await
-}
+        Ok(Pool::builder().build(pg_mgr).await?)
+    }
 
-async fn drop_db(db_transaction: Transaction<'_>) -> Result<(), Error> {
-    db_transaction.execute(DROP_DB, &[]).await?;
-    db_transaction.commit().await
-}
+    pub async fn new() -> Result<Self, BotDbError> {
+        let pl = Self::pool(URL).await?;
+        Ok(DbController { pool: pl })
+    }
 
-// Encrypt a String into a BYTEA
-async fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Vec<u8> {
-    let mut encrypter = Encrypter::new(keypair).unwrap();
-    encrypter.set_rsa_padding(Padding::PKCS1).unwrap();
-    let st_bytes = some_string.as_bytes();
-    let len: usize = encrypter.encrypt_len(st_bytes).unwrap();
-    let mut encrypted = vec![0; len];
-    let encrypted_len = encrypter.encrypt(st_bytes, &mut encrypted).unwrap();
-    encrypted.truncate(encrypted_len);
-    encrypted
-}
+    pub async fn setup_db() -> Result<(), BotDbError> {
+        let pl = Self::pool("postgres://postgres:postgres@localhost").await?;
+        let mut connection = pl.get().await?;
+        let db_transaction = connection.transaction().await?;
+        db_transaction.execute(CREATE_DB, &[]).await?;
+        db_transaction.commit().await?;
 
-// Decrypt a BYTEA into a String
-async fn decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> String {
-    let mut decrypter = Decrypter::new(keypair).unwrap();
-    decrypter.set_rsa_padding(Padding::PKCS1).unwrap();
-    let buffer_len = decrypter.decrypt_len(encrypted).unwrap();
-    let mut decrypted = vec![0; buffer_len];
-    let decrypted_len = decrypter.decrypt(encrypted, &mut decrypted).unwrap();
-    decrypted.truncate(decrypted_len);
-    String::from_utf8(decrypted).unwrap()
-}
+        let pl = Self::pool(URL).await?;
+        let mut connection = pl.get().await?;
+        let mut db_transaction = connection.transaction().await?;
+        Self::migrate(&mut db_transaction).await?;
+        Ok(db_transaction.commit().await?)
+    }
 
-pub async fn is_in_db(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-) -> Result<bool, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-    Ok(db_transaction.execute(IS_IN_DB, &[chat_id, &bytes]).await? == 1)
-}
+    async fn rollback(db_transaction: Transaction<'_>) -> Result<(), BotDbError> {
+        Ok(db_transaction.rollback().await?)
+    }
 
-pub async fn search_city(
-    db_transaction: &mut Transaction<'_>,
-    n: &String,
-    c: &String,
-    s: &String,
-) -> Result<(f64, f64, String, String, String), ()> {
-    let vec: Vec<Row> = db_transaction.query(SEARCH_CITY, &[n, c, s]).await.unwrap();
-    if vec.len() == 1 {
+    async fn drop_db(db_transaction: Transaction<'_>) -> Result<(), BotDbError> {
+        db_transaction.execute(DROP_DB, &[]).await?;
+        Ok(db_transaction.commit().await?)
+    }
+
+    // Encrypt a String into a BYTEA
+    async fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Vec<u8> {
+        let mut encrypter = Encrypter::new(keypair).unwrap();
+        encrypter.set_rsa_padding(Padding::PKCS1).unwrap();
+        let st_bytes = some_string.as_bytes();
+        let len: usize = encrypter.encrypt_len(st_bytes).unwrap();
+        let mut encrypted = vec![0; len];
+        let encrypted_len = encrypter.encrypt(st_bytes, &mut encrypted).unwrap();
+        encrypted.truncate(encrypted_len);
+        encrypted
+    }
+
+    // Decrypt a BYTEA into a String
+    async fn decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> String {
+        let mut decrypter = Decrypter::new(keypair).unwrap();
+        decrypter.set_rsa_padding(Padding::PKCS1).unwrap();
+        let buffer_len = decrypter.decrypt_len(encrypted).unwrap();
+        let mut decrypted = vec![0; buffer_len];
+        let decrypted_len = decrypter.decrypt(encrypted, &mut decrypted).unwrap();
+        decrypted.truncate(decrypted_len);
+        String::from_utf8(decrypted).unwrap()
+    }
+
+    pub async fn is_in_db(&self, chat_id: &i64, user_id: u64) -> Result<bool, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let n = db_transaction.execute(IS_IN_DB, &[chat_id, &bytes]).await?;
+        db_transaction.commit().await?;
+        Ok(n == 1)
+    }
+
+    pub async fn search_city(
+        &self,
+        n: &String,
+        c: &String,
+        s: &String,
+    ) -> Result<(f64, f64, String, String, String), BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let vec: Vec<Row> = db_transaction.query(SEARCH_CITY, &[n, c, s]).await?;
+        db_transaction.commit().await?;
+        if vec.len() == 1 {
+            Ok((
+                vec[0].get("lon"),
+                vec[0].get("lat"),
+                vec[0].get("name"),
+                vec[0].get("country"),
+                vec[0].get("state"),
+            ))
+        } else {
+            Err(BotDbError::CityNotFoundError)
+        }
+    }
+
+    pub async fn get_client_selected(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<String, BotDbError> {
+        let row: &Row = &self.search_client(chat_id, user_id).await?;
+
+        Ok(row.get("selected"))
+    }
+
+    pub async fn get_client_city(&self, chat_id: &i64, user_id: u64) -> Result<String, BotDbError> {
+        let row: &Row = &self.search_client(chat_id, user_id).await?;
+
+        Ok(row.try_get("city")?)
+    }
+
+    pub async fn get_client_before_state(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<String, BotDbError> {
+        let row: &Row = &self.search_client(chat_id, user_id).await?;
+
+        Ok(row.get("before_state"))
+    }
+    pub async fn get_client_state(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<String, BotDbError> {
+        let row: &Row = &self.search_client(chat_id, user_id).await?;
+
+        Ok(row.get("state"))
+    }
+
+    pub async fn search_client(&self, chat_id: &i64, user_id: u64) -> Result<Row, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let row = db_transaction
+            .query_one(SEARCH_CLIENT, &[chat_id, &bytes])
+            .await?;
+
+        db_transaction.commit().await?;
+        Ok(row)
+    }
+    pub async fn insert_client(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        user: String,
+        keypair: &PKey<Private>,
+    ) -> Result<u64, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+        let user_encrypted = Self::encrypt_string(user, keypair).await;
+
+        let n = db_transaction
+            .execute(
+                INSERT_CLIENT,
+                &[
+                    chat_id,
+                    &user_encrypted,
+                    &ClientState::Initial,
+                    &ClientState::Initial,
+                    &bytes,
+                ],
+            )
+            .await?;
+        db_transaction.commit().await?;
+        Ok(n)
+    }
+    pub async fn delete_client(&self, chat_id: &i64, user_id: u64) -> Result<u64, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let n = db_transaction
+            .execute(DELETE_CLIENT, &[chat_id, &bytes])
+            .await?;
+        db_transaction.commit().await?;
+        Ok(n)
+    }
+    pub async fn modify_state(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        new_state: ClientState,
+    ) -> Result<u64, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let n = db_transaction
+            .execute(MODIFY_STATE, &[&new_state, chat_id, &bytes])
+            .await?;
+        db_transaction.commit().await?;
+        Ok(n)
+    }
+
+    pub async fn modify_before_state(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        new_state: ClientState,
+    ) -> Result<u64, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let n = db_transaction
+            .execute(MODIFY_BEFORE_STATE, &[&new_state, chat_id, &bytes])
+            .await?;
+
+        db_transaction.commit().await?;
+        Ok(n)
+    }
+
+    pub async fn modify_city(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        new_city: String,
+    ) -> Result<u64, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let n = db_transaction
+            .execute(MODIFY_CITY, &[&new_city, chat_id, &bytes])
+            .await?;
+
+        db_transaction.commit().await?;
+        Ok(n)
+    }
+    pub async fn modify_selected(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        new_selected: String,
+    ) -> Result<u64, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let n = db_transaction
+            .execute(MODIFY_SELECTED, &[&new_selected, chat_id, &bytes])
+            .await?;
+
+        db_transaction.commit().await?;
+        Ok(n)
+    }
+
+    pub async fn get_city_by_pattern(&self, city: &str) -> Result<Vec<Row>, BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
+        let st = format!("%{}%", city.to_uppercase());
+
+        let vec = db_transaction.query(GET_CITY_BY_PATTERN, &[&st]).await?;
+        db_transaction.commit().await?;
+        Ok(vec)
+    }
+    pub async fn get_city_row(
+        &self,
+        city: &str,
+        n: usize,
+    ) -> Result<(String, String, String), BotDbError> {
+        let vec: Vec<Row> = self.get_city_by_pattern(city).await?;
+        if n > vec.len() {
+            return Err(BotDbError::CityNotFoundError);
+        }
         Ok((
-            vec[0].get("lon"),
-            vec[0].get("lat"),
-            vec[0].get("name"),
-            vec[0].get("country"),
-            vec[0].get("state"),
+            vec[n - 1].get("name"),
+            vec[n - 1].get("country"),
+            vec[n - 1].get("state"),
         ))
-    } else {
-        Err(())
     }
 }
-
-pub async fn get_client_selected(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-) -> Result<String, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
-    Ok(row.get("selected"))
-}
-
-pub async fn get_client_city(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-) -> Result<String, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
-    row.try_get("city")
-}
-
-pub async fn get_client_before_state(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-) -> Result<String, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
-    Ok(row.get("before_state"))
-}
-pub async fn get_client_state(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-) -> Result<String, Error> {
-    let row: &Row = &search_client(db_transaction, chat_id, user_id).await?;
-    Ok(row.get("state"))
-}
-
-pub async fn search_client(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-) -> Result<Row, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-    db_transaction
-        .query_one(SEARCH_CLIENT, &[chat_id, &bytes])
-        .await
-}
-pub async fn insert_client(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-    user: String,
-    keypair: &PKey<Private>,
-) -> Result<u64, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-    let user_encrypted = encrypt_string(user, keypair).await;
-
-    db_transaction
-        .execute(
-            INSERT_CLIENT,
-            &[
-                chat_id,
-                &user_encrypted,
-                &ClientState::Initial,
-                &ClientState::Initial,
-                &bytes,
-            ],
-        )
-        .await
-}
-pub async fn delete_client(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-) -> Result<u64, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-
-    db_transaction
-        .execute(DELETE_CLIENT, &[chat_id, &bytes])
-        .await
-}
-pub async fn modify_state(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-    new_state: ClientState,
-) -> Result<u64, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-
-    db_transaction
-        .execute(MODIFY_STATE, &[&new_state, chat_id, &bytes])
-        .await
-}
-
-pub async fn modify_before_state(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-    new_state: ClientState,
-) -> Result<u64, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-
-    db_transaction
-        .execute(MODIFY_BEFORE_STATE, &[&new_state, chat_id, &bytes])
-        .await
-}
-
-pub async fn modify_city(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-    new_city: String,
-) -> Result<u64, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-
-    db_transaction
-        .execute(MODIFY_CITY, &[&new_city, chat_id, &bytes])
-        .await
-}
-pub async fn modify_selected(
-    db_transaction: &mut Transaction<'_>,
-    chat_id: &i64,
-    user_id: u64,
-    new_selected: String,
-) -> Result<u64, Error> {
-    let bytes = user_id.to_le_bytes().to_vec();
-
-    db_transaction
-        .execute(MODIFY_SELECTED, &[&new_selected, chat_id, &bytes])
-        .await
-}
-
-pub async fn get_city_by_pattern(
-    db_transaction: &mut Transaction<'_>,
-    city: &str,
-) -> Result<Vec<Row>, Error> {
-    let st = format!("%{}%", city.to_uppercase());
-
-    db_transaction.query(GET_CITY_BY_PATTERN, &[&st]).await
-}
-pub async fn get_city_row(
-    db_transaction: &mut Transaction<'_>,
-    city: &str,
-    n: usize,
-) -> Result<(String, String, String), ()> {
-    let vec: Vec<Row> = get_city_by_pattern(db_transaction, city).await.unwrap();
-    if n > vec.len() {
-        return Err(());
-    }
-    Ok((
-        vec[n - 1].get("name"),
-        vec[n - 1].get("country"),
-        vec[n - 1].get("state"),
-    ))
-}
-
 #[cfg(test)]
 mod db_test {
     use crate::db::*;

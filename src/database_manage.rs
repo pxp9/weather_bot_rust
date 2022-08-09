@@ -1,7 +1,7 @@
+use bb8_postgres::tokio_postgres::{Error, Row, Transaction};
 use openssl::encrypt::{Decrypter, Encrypter};
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Padding;
-use tokio_postgres::{Error, Row, Transaction};
 // Encrypt a String into bytea
 async fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Vec<u8> {
     let mut encrypter = Encrypter::new(keypair).unwrap();
