@@ -400,7 +400,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), BotError> {
     let state: ClientState;
     // if user is not in the database, insert the user with Initial state
     // if it is , check its state.
-    if !db_controller.is_in_db(&chat_id, user_id).await? {
+    if !db_controller.check_user_exists(&chat_id, user_id).await? {
         db_controller
             .insert_client(&chat_id, user_id, user.clone(), &pm.keypair)
             .await?;

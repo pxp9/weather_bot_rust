@@ -1,9 +1,11 @@
 use bb8_postgres::bb8::Pool;
 use bb8_postgres::bb8::RunError;
 use bb8_postgres::tokio_postgres::tls::NoTls;
-use bb8_postgres::tokio_postgres::{Row, Transaction};
+use bb8_postgres::tokio_postgres::Row;
 use bb8_postgres::PostgresConnectionManager;
-use openssl::encrypt::{Decrypter, Encrypter};
+#[cfg(test)]
+use openssl::encrypt::Decrypter;
+use openssl::encrypt::Encrypter;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Padding;
 use postgres_types::{FromSql, ToSql};
@@ -46,7 +48,7 @@ const URL: &str = "postgres://postgres:postgres@localhost/weather_bot";
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
-const IS_IN_DB: &str = include_str!("queries/is_in_db.sql");
+const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
 const MODIFY_BEFORE_STATE: &str = include_str!("queries/modify_before_state.sql");
 const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
@@ -66,15 +68,8 @@ impl DbController {
         Ok(DbController { pool: pl })
     }
 
-    pub async fn rollback(db_transaction: Transaction<'_>) -> Result<(), BotDbError> {
-        Ok(db_transaction.rollback().await?)
-    }
-
     // Encrypt a String into a BYTEA
-    async fn encrypt_string(
-        some_string: String,
-        keypair: &PKey<Private>,
-    ) -> Result<Vec<u8>, BotDbError> {
+    fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Result<Vec<u8>, BotDbError> {
         let mut encrypter = Encrypter::new(keypair)?;
         encrypter.set_rsa_padding(Padding::PKCS1)?;
         let st_bytes = some_string.as_bytes();
@@ -86,10 +81,8 @@ impl DbController {
     }
 
     // Decrypt a BYTEA into a String
-    async fn decrypt_string(
-        encrypted: &[u8],
-        keypair: &PKey<Private>,
-    ) -> Result<String, BotDbError> {
+    #[cfg(test)]
+    fn decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> Result<String, BotDbError> {
         let mut decrypter = Decrypter::new(keypair)?;
         decrypter.set_rsa_padding(Padding::PKCS1)?;
         let buffer_len = decrypter.decrypt_len(encrypted)?;
@@ -99,13 +92,13 @@ impl DbController {
         Ok(String::from_utf8(decrypted)?)
     }
 
-    pub async fn is_in_db(&self, chat_id: &i64, user_id: u64) -> Result<bool, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+    pub async fn check_user_exists(&self, chat_id: &i64, user_id: u64) -> Result<bool, BotDbError> {
+        let connection = self.pool.get().await?;
         let bytes = user_id.to_le_bytes().to_vec();
 
-        let n = db_transaction.execute(IS_IN_DB, &[chat_id, &bytes]).await?;
-        db_transaction.commit().await?;
+        let n = connection
+            .execute(CHECK_USER_EXISTS, &[chat_id, &bytes])
+            .await?;
         Ok(n == 1)
     }
 
@@ -115,11 +108,9 @@ impl DbController {
         c: &String,
         s: &String,
     ) -> Result<(f64, f64, String, String, String), BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
-        let vec: Vec<Row> = db_transaction.query(SEARCH_CITY, &[n, c, s]).await?;
-        db_transaction.commit().await?;
+        let vec: Vec<Row> = connection.query(SEARCH_CITY, &[n, c, s]).await?;
         if vec.len() == 1 {
             Ok((
                 vec[0].get("lon"),
@@ -169,16 +160,14 @@ impl DbController {
     }
 
     pub async fn search_client(&self, chat_id: &i64, user_id: u64) -> Result<Row, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
-        let row = db_transaction
+        let row = connection
             .query_one(SEARCH_CLIENT, &[chat_id, &bytes])
             .await?;
 
-        db_transaction.commit().await?;
         Ok(row)
     }
     pub async fn insert_client(
@@ -188,13 +177,12 @@ impl DbController {
         user: String,
         keypair: &PKey<Private>,
     ) -> Result<u64, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
-        let user_encrypted = Self::encrypt_string(user, keypair).await?;
+        let user_encrypted = Self::encrypt_string(user, keypair)?;
 
-        let n = db_transaction
+        let n = connection
             .execute(
                 INSERT_CLIENT,
                 &[
@@ -206,19 +194,16 @@ impl DbController {
                 ],
             )
             .await?;
-        db_transaction.commit().await?;
         Ok(n)
     }
     pub async fn delete_client(&self, chat_id: &i64, user_id: u64) -> Result<u64, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
-        let n = db_transaction
+        let n = connection
             .execute(DELETE_CLIENT, &[chat_id, &bytes])
             .await?;
-        db_transaction.commit().await?;
         Ok(n)
     }
     pub async fn modify_state(
@@ -227,15 +212,13 @@ impl DbController {
         user_id: u64,
         new_state: ClientState,
     ) -> Result<u64, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
-        let n = db_transaction
+        let n = connection
             .execute(MODIFY_STATE, &[&new_state, chat_id, &bytes])
             .await?;
-        db_transaction.commit().await?;
         Ok(n)
     }
 
@@ -245,16 +228,14 @@ impl DbController {
         user_id: u64,
         new_state: ClientState,
     ) -> Result<u64, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
-        let n = db_transaction
+        let n = connection
             .execute(MODIFY_BEFORE_STATE, &[&new_state, chat_id, &bytes])
             .await?;
 
-        db_transaction.commit().await?;
         Ok(n)
     }
 
@@ -264,16 +245,14 @@ impl DbController {
         user_id: u64,
         new_city: String,
     ) -> Result<u64, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
-        let n = db_transaction
+        let n = connection
             .execute(MODIFY_CITY, &[&new_city, chat_id, &bytes])
             .await?;
 
-        db_transaction.commit().await?;
         Ok(n)
     }
     pub async fn modify_selected(
@@ -282,27 +261,23 @@ impl DbController {
         user_id: u64,
         new_selected: String,
     ) -> Result<u64, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
-        let n = db_transaction
+        let n = connection
             .execute(MODIFY_SELECTED, &[&new_selected, chat_id, &bytes])
             .await?;
 
-        db_transaction.commit().await?;
         Ok(n)
     }
 
     pub async fn get_city_by_pattern(&self, city: &str) -> Result<Vec<Row>, BotDbError> {
-        let mut connection = self.pool.get().await?;
-        let db_transaction = connection.transaction().await?;
+        let connection = self.pool.get().await?;
 
         let st = format!("%{}%", city.to_uppercase());
 
-        let vec = db_transaction.query(GET_CITY_BY_PATTERN, &[&st]).await?;
-        db_transaction.commit().await?;
+        let vec = connection.query(GET_CITY_BY_PATTERN, &[&st]).await?;
         Ok(vec)
     }
     pub async fn get_city_row(
@@ -327,14 +302,12 @@ mod db_test {
     use bb8_postgres::tokio_postgres::Row;
     use openssl::pkey::PKey;
     use openssl::rsa::Rsa;
-    use std::convert::TryInto;
 
     #[tokio::test]
     async fn test_modify_state() {
         // Pick a random user of the DB
         let db_controller = DbController::new().await.unwrap();
-        let mut connection = db_controller.pool.get().await.unwrap();
-        let transaction = connection.transaction().await.unwrap();
+        let connection = db_controller.pool.get().await.unwrap();
 
         let binary_file = std::fs::read("./resources/key.pem").unwrap();
         let keypair = Rsa::private_key_from_pem(&binary_file).unwrap();
@@ -347,12 +320,10 @@ mod db_test {
 
         assert_eq!(n, 1_u64);
 
-        let row: &Row = &transaction
+        let row: &Row = &connection
             .query_one("SELECT * FROM chat LIMIT 1", &[])
             .await
             .unwrap();
-
-        transaction.commit().await.unwrap();
 
         let chat_id: i64 = row.get("id");
 
@@ -361,6 +332,8 @@ mod db_test {
         arr.copy_from_slice(&bytes);
         let user_id = as_u64_le(&arr);
 
+        let user: String = DbController::decrypt_string(row.get("user"), &keypair).unwrap();
+        assert_eq!(user, String::from("@ItzPXP9"));
         // testing modify state
 
         let n = db_controller
