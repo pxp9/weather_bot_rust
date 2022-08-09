@@ -329,7 +329,7 @@ mod db_test {
 
         let bytes: &[u8] = row.get("user_id");
         let mut arr = [0u8; 8];
-        arr.copy_from_slice(&bytes);
+        arr.copy_from_slice(bytes);
         let user_id = as_u64_le(&arr);
 
         let user: String = DbController::decrypt_string(row.get("user"), &keypair).unwrap();
@@ -368,7 +368,7 @@ mod db_test {
         assert_eq!(n, 1_u64);
     }
     fn as_u64_le(array: &[u8; 8]) -> u64 {
-        ((array[0] as u64) << 0)
+        (array[0] as u64)
             + ((array[1] as u64) << 8)
             + ((array[2] as u64) << 16)
             + ((array[3] as u64) << 24)
