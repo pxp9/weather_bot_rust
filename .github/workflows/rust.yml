@@ -41,7 +41,7 @@ jobs:
           override: true
           profile: minimal
           toolchain: stable
-
+      
       - name: Run clippy
         uses: actions-rs/cargo@v1
         with:
@@ -53,10 +53,14 @@ jobs:
         with:
           command: install
           args: diesel_cli --no-default-features --features "postgres"
-
+      
       - name: Setup db
         run: diesel setup
-
+      
+      - name : Setup key.pem
+        run : |
+          openssl genrsa -out key.pem 2048
+          mv key.pem resources
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
