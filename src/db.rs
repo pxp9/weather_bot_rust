@@ -17,7 +17,9 @@ pub enum BotDbError {
     #[error(transparent)]
     PgError(#[from] bb8_postgres::tokio_postgres::Error),
     #[error(transparent)]
-    SerdeError(#[from] serde_json::Error),
+    EncryptError(#[from] openssl::error::ErrorStack),
+    #[error(transparent)]
+    StringError(#[from] std::string::FromUtf8Error),
     #[error("City not found")]
     CityNotFoundError,
 }
@@ -66,7 +68,7 @@ impl DbController {
     }
 
     async fn pool(url: &str) -> Result<Pool<PostgresConnectionManager<NoTls>>, BotDbError> {
-        let pg_mgr = PostgresConnectionManager::new_from_stringlike(url, NoTls).unwrap();
+        let pg_mgr = PostgresConnectionManager::new_from_stringlike(url, NoTls)?;
 
         Ok(Pool::builder().build(pg_mgr).await?)
     }
@@ -90,36 +92,45 @@ impl DbController {
         Ok(db_transaction.commit().await?)
     }
 
-    async fn rollback(db_transaction: Transaction<'_>) -> Result<(), BotDbError> {
+    pub async fn rollback(db_transaction: Transaction<'_>) -> Result<(), BotDbError> {
         Ok(db_transaction.rollback().await?)
     }
 
-    async fn drop_db(db_transaction: Transaction<'_>) -> Result<(), BotDbError> {
+    pub async fn drop_db(&self) -> Result<(), BotDbError> {
+        let mut connection = self.pool.get().await?;
+        let db_transaction = connection.transaction().await?;
+
         db_transaction.execute(DROP_DB, &[]).await?;
         Ok(db_transaction.commit().await?)
     }
 
     // Encrypt a String into a BYTEA
-    async fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Vec<u8> {
-        let mut encrypter = Encrypter::new(keypair).unwrap();
-        encrypter.set_rsa_padding(Padding::PKCS1).unwrap();
+    async fn encrypt_string(
+        some_string: String,
+        keypair: &PKey<Private>,
+    ) -> Result<Vec<u8>, BotDbError> {
+        let mut encrypter = Encrypter::new(keypair)?;
+        encrypter.set_rsa_padding(Padding::PKCS1)?;
         let st_bytes = some_string.as_bytes();
-        let len: usize = encrypter.encrypt_len(st_bytes).unwrap();
+        let len: usize = encrypter.encrypt_len(st_bytes)?;
         let mut encrypted = vec![0; len];
-        let encrypted_len = encrypter.encrypt(st_bytes, &mut encrypted).unwrap();
+        let encrypted_len = encrypter.encrypt(st_bytes, &mut encrypted)?;
         encrypted.truncate(encrypted_len);
-        encrypted
+        Ok(encrypted)
     }
 
     // Decrypt a BYTEA into a String
-    async fn decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> String {
-        let mut decrypter = Decrypter::new(keypair).unwrap();
-        decrypter.set_rsa_padding(Padding::PKCS1).unwrap();
-        let buffer_len = decrypter.decrypt_len(encrypted).unwrap();
+    async fn decrypt_string(
+        encrypted: &[u8],
+        keypair: &PKey<Private>,
+    ) -> Result<String, BotDbError> {
+        let mut decrypter = Decrypter::new(keypair)?;
+        decrypter.set_rsa_padding(Padding::PKCS1)?;
+        let buffer_len = decrypter.decrypt_len(encrypted)?;
         let mut decrypted = vec![0; buffer_len];
-        let decrypted_len = decrypter.decrypt(encrypted, &mut decrypted).unwrap();
+        let decrypted_len = decrypter.decrypt(encrypted, &mut decrypted)?;
         decrypted.truncate(decrypted_len);
-        String::from_utf8(decrypted).unwrap()
+        Ok(String::from_utf8(decrypted)?)
     }
 
     pub async fn is_in_db(&self, chat_id: &i64, user_id: u64) -> Result<bool, BotDbError> {
@@ -176,7 +187,7 @@ impl DbController {
         &self,
         chat_id: &i64,
         user_id: u64,
-    ) -> Result<String, BotDbError> {
+    ) -> Result<ClientState, BotDbError> {
         let row: &Row = &self.search_client(chat_id, user_id).await?;
 
         Ok(row.get("before_state"))
@@ -185,7 +196,7 @@ impl DbController {
         &self,
         chat_id: &i64,
         user_id: u64,
-    ) -> Result<String, BotDbError> {
+    ) -> Result<ClientState, BotDbError> {
         let row: &Row = &self.search_client(chat_id, user_id).await?;
 
         Ok(row.get("state"))
@@ -215,7 +226,7 @@ impl DbController {
         let db_transaction = connection.transaction().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
-        let user_encrypted = Self::encrypt_string(user, keypair).await;
+        let user_encrypted = Self::encrypt_string(user, keypair).await?;
 
         let n = db_transaction
             .execute(
@@ -347,59 +358,54 @@ impl DbController {
 #[cfg(test)]
 mod db_test {
     use crate::db::*;
+    use bb8_postgres::tokio_postgres::{NoTls, Row};
     use std::convert::TryInto;
-    use tokio_postgres::{NoTls, Row};
 
     #[tokio::test]
     async fn test_modify_state() {
         // Pick a random user of the DB
-        let (mut client, connection) =
-            tokio_postgres::connect("host=localhost dbname=weather_bot user=postgres", NoTls)
-                .await
-                .unwrap();
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                eprintln!("connection error: {}", e);
-            }
-        });
-        let mut transaction = client.transaction().await.unwrap();
+        let db_controller = DbController::new().await.unwrap();
+        let mut connection = db_controller.pool.get().await.unwrap();
+        let transaction = connection.transaction().await.unwrap();
+
         let row: &Row = &transaction
-            .query("SELECT * FROM chat LIMIT 1", &[])
+            .query_one("SELECT * FROM chat LIMIT 1", &[])
             .await
-            .unwrap()[0];
+            .unwrap();
+
+        transaction.commit().await.unwrap();
+
         let chat_id: i64 = row.get("id");
         let bytes: &[u8] = row.get("user_id");
         let user_id: u64 = u64::from_be_bytes(bytes.try_into().expect("incorrect len"));
         // testing modify state
-        let n = modify_state(
-            &mut transaction,
-            &chat_id,
-            user_id,
-            String::from("AskingCity"),
-        )
-        .await
-        .unwrap();
+
+        let n = db_controller
+            .modify_state(&chat_id, user_id, ClientState::Pattern)
+            .await
+            .unwrap();
+
         assert_eq!(n, 1_u64);
-        transaction.commit().await.unwrap();
-        let mut transaction = client.transaction().await.unwrap();
 
         // testing get state
-        let actual_state = get_client_state(&mut transaction, &chat_id, user_id)
+        let actual_state = db_controller
+            .get_client_state(&chat_id, user_id)
             .await
             .unwrap();
-        assert_eq!(actual_state, String::from("AskingCity"));
 
-        let n = modify_state(&mut transaction, &chat_id, user_id, String::from("Initial"))
+        assert_eq!(actual_state, ClientState::Pattern);
+
+        let n = db_controller
+            .modify_state(&chat_id, user_id, ClientState::Initial)
             .await
             .unwrap();
         assert_eq!(n, 1_u64);
-        transaction.commit().await.unwrap();
 
-        let mut transaction = client.transaction().await.unwrap();
-        let actual_state = get_client_state(&mut transaction, &chat_id, user_id)
+        let actual_state = db_controller
+            .get_client_state(&chat_id, user_id)
             .await
             .unwrap();
-        assert_eq!(actual_state, String::from("Initial"));
-        transaction.commit().await.unwrap();
+
+        assert_eq!(actual_state, ClientState::Initial);
     }
 }
