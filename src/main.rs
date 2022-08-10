@@ -8,24 +8,13 @@ use frankenstein::SendMessageParams;
 use frankenstein::{AsyncApi, UpdateContent};
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
-use std::env;
 use std::fmt::Write;
-use thiserror::Error;
 use tokio::runtime;
-use weather_bot_rust::db::BotDbError;
-use weather_bot_rust::db::ClientState;
-use weather_bot_rust::db::DbController;
+use weather_bot_rust::db::{BotDbError, ClientState, DbController};
 use weather_bot_rust::json_parse::*;
-
-#[derive(Debug, Error)]
-pub enum BotError {
-    #[error(transparent)]
-    MessageError(#[from] std::fmt::Error),
-    #[error(transparent)]
-    TelegramError(#[from] frankenstein::Error),
-    #[error(transparent)]
-    DbError(#[from] BotDbError),
-}
+use weather_bot_rust::{
+    BotError, BINARY_FILE, OPEN_WEATHER_MAP_API_TOKEN, RUST_TELEGRAM_BOT_TOKEN,
+};
 
 // What we do if users write /start in any state.
 async fn start(conf: Conf<'_>) -> Result<(), BotError> {
@@ -274,15 +263,15 @@ struct Conf<'a> {
     db_controller: DbController,
     chat_id: &'a i64,
     user_id: u64,
-    username: &'a String,
+    username: &'a str,
     message: Message,
-    opwm_token: &'a String,
+    opwm_token: &'a str,
 }
-struct ProcessMessage {
+struct ProcessMessage<'a> {
     _me: String,
     api: AsyncApi,
     message: Message,
-    opwm_token: String,
+    opwm_token: &'a str,
     keypair: PKey<Private>,
 }
 
@@ -304,12 +293,9 @@ fn main() {
 
 async fn bot_main() -> Result<(), BotError> {
     // Initial setup to run the bot
-    let token = env::var("RUST_TELEGRAM_BOT_TOKEN").expect("RUST_TELEGRAM_BOT_TOKEN not set");
-    let api = AsyncApi::new(&token);
-    let opwm_token =
-        env::var("OPEN_WEATHER_MAP_API_TOKEN").expect("OPEN_WEATHER_MAP_API_TOKEN not set");
-    let binary_file = std::fs::read("./resources/key.pem").unwrap();
-    let keypair = Rsa::private_key_from_pem(&binary_file).unwrap();
+    let api = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
+    let opwm_token = &OPEN_WEATHER_MAP_API_TOKEN;
+    let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
     let keypair = PKey::from_rsa(keypair).unwrap();
     let me = api.get_me().await?.result.username.unwrap();
     // Cities are in database ?
@@ -381,7 +367,7 @@ async fn send_typing(message: &Message, api: &AsyncApi) -> Result<(), BotError> 
     Ok(())
 }
 // Process the message of each update
-async fn process_message(pm: ProcessMessage) -> Result<(), BotError> {
+async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
     // get the user that is writing the message
     let chat_id: i64 = (*pm.message.chat).id;
     let user_id: u64 = match &pm.message.from.as_deref() {
@@ -419,7 +405,7 @@ async fn process_message(pm: ProcessMessage) -> Result<(), BotError> {
         user_id,
         username: &user,
         message: pm.message.clone(),
-        opwm_token: &pm.opwm_token,
+        opwm_token: pm.opwm_token,
     };
     // State Machine that handles the user update.
     // Match the state and the message to know what to do.

@@ -2616,6 +2616,7 @@ dependencies = [
  "fang",
  "frankenstein",
  "futures 0.3.21",
+ "lazy_static",
  "log",
  "openssl",
  "postgres-types",
