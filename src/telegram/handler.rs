@@ -1,9 +1,9 @@
 use super::client::ApiClient;
 use super::process_update_task::ProcessUpdateTask;
+use crate::DATABASE_URL;
 use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_queue::AsyncQueueable;
 use fang::NoTls;
-use std::env;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -45,10 +45,8 @@ impl Handler {
     }
 
     fn init_queue() -> AsyncQueue<NoTls> {
-        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL not set");
-
         AsyncQueue::builder()
-            .uri(database_url)
+            .uri(DATABASE_URL.clone())
             .max_pool_size(1_u32)
             .duplicated_tasks(true)
             .build()

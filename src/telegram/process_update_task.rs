@@ -1,5 +1,4 @@
-use crate::BotError;
-use crate::{BINARY_FILE, OPEN_WEATHER_MAP_API_TOKEN, RUST_TELEGRAM_BOT_TOKEN};
+use crate::{BotError, BINARY_FILE, OPEN_WEATHER_MAP_API_TOKEN, RUST_TELEGRAM_BOT_TOKEN};
 use fang::async_trait;
 use fang::asynk::async_queue::AsyncQueueable;
 use fang::asynk::AsyncError as Error;

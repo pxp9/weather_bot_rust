@@ -1,3 +1,4 @@
+use crate::DATABASE_URL;
 use bb8_postgres::bb8::Pool;
 use bb8_postgres::bb8::RunError;
 use bb8_postgres::tokio_postgres::tls::NoTls;
@@ -44,7 +45,6 @@ pub enum ClientState {
     SetCity,
 }
 
-const URL: &str = "postgres://postgres:postgres@localhost/weather_bot";
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
@@ -64,7 +64,7 @@ impl DbController {
     }
 
     pub async fn new() -> Result<Self, BotDbError> {
-        let pl = Self::pool(URL).await?;
+        let pl = Self::pool(&DATABASE_URL).await?;
         Ok(DbController { pool: pl })
     }
 
