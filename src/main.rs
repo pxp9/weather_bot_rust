@@ -19,8 +19,10 @@ use weather_bot_rust::{
 // What we do if users write /start in any state.
 async fn start(conf: Conf<'_>) -> Result<(), BotError> {
     let text = format!(
-        "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n/city ask weather info from a city in a specific format\n/pattern ask weather info from city without format\n
-The bot is going to ask a city in a specific format, finally the bot will provide the weather info.\n
+        "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n
+        /pattern ask weather info from city without format\n
+        /set_city set your default city\n
+        /default provides weather info from default city\n
 It would be really greatful if you take a look my GitHub, look how much work has this bot, if you like this bot give me
 an star or if you would like to self run it, fork the proyect please.\n
 <a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot </a>",
@@ -294,7 +296,6 @@ fn main() {
 async fn bot_main() -> Result<(), BotError> {
     // Initial setup to run the bot
     let api = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
-    let opwm_token = &OPEN_WEATHER_MAP_API_TOKEN;
     let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
     let keypair = PKey::from_rsa(keypair).unwrap();
     let me = api.get_me().await?.result.username.unwrap();
@@ -330,7 +331,7 @@ async fn bot_main() -> Result<(), BotError> {
                 for update in response.result {
                     if let UpdateContent::Message(message) = update.content {
                         let api_clone = api.clone();
-                        let token_clone = opwm_token.clone();
+                        let token_clone = &OPEN_WEATHER_MAP_API_TOKEN;
                         let keypair_clone = keypair.clone();
                         let me_clone = me.clone();
                         // What we need to Process a Message.
