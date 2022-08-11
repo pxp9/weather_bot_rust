@@ -61,6 +61,11 @@ jobs:
         run : |
           openssl genrsa -out key.pem 2048
           mv key.pem resources
+
+      - name : Database Url setup
+        run : |
+          source .env
+
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
