@@ -1,20 +1,25 @@
 use bb8_postgres::tokio_postgres::NoTls;
 use frankenstein::api_params::{ChatAction, SendChatActionParams};
+use frankenstein::AsyncApi;
 use frankenstein::AsyncTelegramApi;
 use frankenstein::GetUpdatesParams;
 use frankenstein::Message;
 use frankenstein::ParseMode;
 use frankenstein::SendMessageParams;
-use frankenstein::{AsyncApi, UpdateContent};
-use openssl::pkey::{PKey, Private};
+use frankenstein::UpdateContent;
+use openssl::pkey::PKey;
+use openssl::pkey::Private;
 use openssl::rsa::Rsa;
 use std::fmt::Write;
 use tokio::runtime;
-use weather_bot_rust::db::{BotDbError, ClientState, DbController};
+use weather_bot_rust::db::BotDbError;
+use weather_bot_rust::db::ClientState;
+use weather_bot_rust::db::DbController;
 use weather_bot_rust::json_parse::*;
-use weather_bot_rust::{
-    BotError, BINARY_FILE, OPEN_WEATHER_MAP_API_TOKEN, RUST_TELEGRAM_BOT_TOKEN,
-};
+use weather_bot_rust::BotError;
+use weather_bot_rust::BINARY_FILE;
+use weather_bot_rust::OPEN_WEATHER_MAP_API_TOKEN;
+use weather_bot_rust::RUST_TELEGRAM_BOT_TOKEN;
 
 // Function to send a message to a client.
 async fn send_message_client(

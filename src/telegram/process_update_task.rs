@@ -1,16 +1,25 @@
-use crate::db::{ClientState, DbController};
-use crate::{BotError, BINARY_FILE, OPEN_WEATHER_MAP_API_TOKEN, RUST_TELEGRAM_BOT_TOKEN};
+use crate::db::ClientState;
+use crate::db::DbController;
+use crate::BotError;
+use crate::BINARY_FILE;
+use crate::RUST_TELEGRAM_BOT_TOKEN;
 use fang::async_trait;
 use fang::asynk::async_queue::AsyncQueueable;
 use fang::asynk::AsyncError as Error;
-use fang::serde::{Deserialize, Serialize};
+use fang::serde::Deserialize;
+use fang::serde::Serialize;
 use fang::typetag;
 use fang::AsyncRunnable;
-use frankenstein::{
-    AsyncApi, AsyncTelegramApi, ChatAction, Message, ParseMode, SendChatActionParams,
-    SendMessageParams, Update, UpdateContent,
-};
-use openssl::pkey::{PKey, Private};
+use frankenstein::AsyncApi;
+use frankenstein::AsyncTelegramApi;
+use frankenstein::ChatAction;
+use frankenstein::Message;
+use frankenstein::ParseMode;
+use frankenstein::SendChatActionParams;
+use frankenstein::SendMessageParams;
+use frankenstein::Update;
+use frankenstein::UpdateContent;
+use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
 
 const TASK_TYPE: &str = "update";
@@ -30,17 +39,13 @@ impl ProcessUpdateTask {
         log::info!("Received a message {:?}", self.update);
 
         let api = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
-        // for now with _ to pass warnings
-        let _opwm_token = &OPEN_WEATHER_MAP_API_TOKEN;
-        let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
-        let keypair = PKey::from_rsa(keypair).unwrap();
 
         if let UpdateContent::Message(message) = &self.update.content {
             let (chat_id, user_id, user) = Self::get_info_from_message(message);
 
             Self::send_typing(message, &api).await?;
 
-            let state = Self::fetch_state(&chat_id, user_id, user.clone(), &keypair).await?;
+            let state = Self::fetch_state(&chat_id, user_id, user.clone()).await?;
 
             match state {
                 ClientState::Initial => match message.text.as_deref() {
@@ -64,13 +69,15 @@ impl ProcessUpdateTask {
         chat_id: &i64,
         user_id: u64,
         user: String,
-        keypair: &PKey<Private>,
     ) -> Result<ClientState, BotError> {
         // Maybe here can be recycled pool from AsyncQueue from Fang for now this is fine
         let db_controller = DbController::new().await?;
         let state: ClientState = if !db_controller.check_user_exists(chat_id, user_id).await? {
+            let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
+            let keypair = PKey::from_rsa(keypair).unwrap();
+
             db_controller
-                .insert_client(chat_id, user_id, user, keypair)
+                .insert_client(chat_id, user_id, user, &keypair)
                 .await?;
 
             ClientState::Initial

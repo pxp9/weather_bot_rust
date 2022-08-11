@@ -1,5 +1,9 @@
 use crate::RUST_TELEGRAM_BOT_TOKEN;
-use frankenstein::{AllowedUpdate, AsyncApi, AsyncTelegramApi, GetUpdatesParams, Update};
+use frankenstein::AllowedUpdate;
+use frankenstein::AsyncApi;
+use frankenstein::AsyncTelegramApi;
+use frankenstein::GetUpdatesParams;
+use frankenstein::Update;
 use std::collections::VecDeque;
 
 pub struct ApiClient {
