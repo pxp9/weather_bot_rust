@@ -16,21 +16,6 @@ use weather_bot_rust::{
     BotError, BINARY_FILE, OPEN_WEATHER_MAP_API_TOKEN, RUST_TELEGRAM_BOT_TOKEN,
 };
 
-// What we do if users write /start in any state.
-async fn start(conf: Conf<'_>) -> Result<(), BotError> {
-    let text = format!(
-        "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n
-        /pattern ask weather info from city without format\n
-        /set_city set your default city\n
-        /default provides weather info from default city\n
-It would be really greatful if you take a look my GitHub, look how much work has this bot, if you like this bot give me
-an star or if you would like to self run it, fork the proyect please.\n
-<a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot </a>",
-        conf.username
-    );
-    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
-    Ok(())
-}
 // Function to send a message to a client.
 async fn send_message_client(
     chat_id: &i64,
@@ -412,9 +397,6 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
     // Match the state and the message to know what to do.
     match state {
         ClientState::Initial => match pm.message.text.as_deref() {
-            Some("/start") | Some("/start@RustWeather77Bot") => {
-                start(conf).await?;
-            }
             Some("/default") | Some("/default@RustWeather77Bot") => {
                 match db_controller.get_client_city(&chat_id, user_id).await {
                     Ok(formated) => {
@@ -447,9 +429,6 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
         },
 
         ClientState::Pattern => match pm.message.text.as_deref() {
-            Some("/start") | Some("/start@RustWeather77Bot") => {
-                start(conf).await?;
-            }
             Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf).await?;
             }
@@ -466,9 +445,6 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
             _ => {}
         },
         ClientState::Number => match pm.message.text.as_deref() {
-            Some("/start") | Some("/start@RustWeather77Bot") => {
-                start(conf).await?;
-            }
             Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf).await?;
             }

@@ -21,10 +21,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          DATABASE_URL: postgres://postgres:postgres@localhost/weather_bot
-          RUST_TELEGRAM_BOT_TOKEN : ${{ secrets.RUST_TELEGRAM_BOT_TOKEN }}
-          OPEN_WEATHER_MAP_API_TOKEN: ${{ secrets.OPEN_WEATHER_MAP_API_TOKEN }}
-        # Set health checks to wait until postgres has started
+       # Set health checks to wait until postgres has started
 
         ports:
           - 5432:5432
@@ -66,16 +63,20 @@ jobs:
           mv key.pem resources
 
       - name: Run tests
+        env:
+          DATABASE_URL: "postgres://postgres:postgres@localhost/weather_bot"
+          RUST_TELEGRAM_BOT_TOKEN : ${{ secrets.RUST_TELEGRAM_BOT_TOKEN }}
+          OPEN_WEATHER_MAP_API_TOKEN: ${{ secrets.OPEN_WEATHER_MAP_API_TOKEN }}
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --verbose --all-features
-
-      - name: Run dirty tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --all-features -- --ignored
+        
+            # - name: Run dirty tests
+            # uses: actions-rs/cargo@v1
+            # with:
+            #   command: test
+            #   args: --verbose --all-features -- --ignored
 
   release:
     name: Release x86_64-unknown-linux-gnu

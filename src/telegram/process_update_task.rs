@@ -83,17 +83,18 @@ impl ProcessUpdateTask {
 
     fn get_info_from_message(message: &Message) -> (i64, u64, String) {
         let chat_id: i64 = message.chat.id;
-        let user_id: u64 = match message.from.as_deref() {
-            Some(user) => user.id,
-            None => panic!("No user ???"),
+        let user_id: u64 = message.from.as_ref().expect("No user ???").id;
+
+        let user = match &message.from.as_ref().expect("No user ???").username {
+            Some(username) => format!("@{}", username.clone()),
+            None => message
+                .from
+                .as_ref()
+                .expect("No user ???")
+                .first_name
+                .clone(),
         };
-        let user = match message.from.as_deref() {
-            Some(user) => match &user.username {
-                Some(username) => format!("@{}", username.clone()),
-                None => user.first_name.clone(),
-            },
-            None => panic!("No user ???"),
-        };
+
         (chat_id, user_id, user)
     }
 
