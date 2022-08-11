@@ -1,14 +1,10 @@
+use crate::RUST_TELEGRAM_BOT_TOKEN;
 use frankenstein::AllowedUpdate;
 use frankenstein::AsyncApi;
 use frankenstein::AsyncTelegramApi;
-use frankenstein::Error;
 use frankenstein::GetUpdatesParams;
-use frankenstein::Message;
-use frankenstein::ParseMode;
-use frankenstein::SendMessageParams;
 use frankenstein::Update;
 use std::collections::VecDeque;
-use std::env;
 
 pub struct ApiClient {
     telegram_client: AsyncApi,
@@ -24,8 +20,7 @@ impl Default for ApiClient {
 
 impl ApiClient {
     pub fn new() -> Self {
-        let token = env::var("RUST_TELEGRAM_BOT_TOKEN").expect("RUST_TELEGRAM_BOT_TOKEN not set");
-        let telegram_client = AsyncApi::new(&token);
+        let telegram_client = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
 
         let update_params = GetUpdatesParams::builder()
             .allowed_updates(vec![AllowedUpdate::Message, AllowedUpdate::ChannelPost])
@@ -63,20 +58,5 @@ impl ApiClient {
                 None
             }
         }
-    }
-
-    pub async fn send_message(&self, message: &Message, text: &str) -> Result<(), Error> {
-        let send_message_params = SendMessageParams::builder()
-            .chat_id(message.chat.id)
-            .text(text)
-            .reply_to_message_id(message.message_id)
-            .parse_mode(ParseMode::Html)
-            .build();
-
-        self.telegram_client
-            .send_message(&send_message_params)
-            .await?;
-
-        Ok(())
     }
 }

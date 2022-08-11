@@ -1,45 +1,26 @@
 use bb8_postgres::tokio_postgres::NoTls;
 use frankenstein::api_params::{ChatAction, SendChatActionParams};
+use frankenstein::AsyncApi;
 use frankenstein::AsyncTelegramApi;
 use frankenstein::GetUpdatesParams;
 use frankenstein::Message;
 use frankenstein::ParseMode;
 use frankenstein::SendMessageParams;
-use frankenstein::{AsyncApi, UpdateContent};
-use openssl::pkey::{PKey, Private};
+use frankenstein::UpdateContent;
+use openssl::pkey::PKey;
+use openssl::pkey::Private;
 use openssl::rsa::Rsa;
-use std::env;
 use std::fmt::Write;
-use thiserror::Error;
 use tokio::runtime;
 use weather_bot_rust::db::BotDbError;
 use weather_bot_rust::db::ClientState;
 use weather_bot_rust::db::DbController;
 use weather_bot_rust::json_parse::*;
+use weather_bot_rust::BotError;
+use weather_bot_rust::BINARY_FILE;
+use weather_bot_rust::OPEN_WEATHER_MAP_API_TOKEN;
+use weather_bot_rust::RUST_TELEGRAM_BOT_TOKEN;
 
-#[derive(Debug, Error)]
-pub enum BotError {
-    #[error(transparent)]
-    MessageError(#[from] std::fmt::Error),
-    #[error(transparent)]
-    TelegramError(#[from] frankenstein::Error),
-    #[error(transparent)]
-    DbError(#[from] BotDbError),
-}
-
-// What we do if users write /start in any state.
-async fn start(conf: Conf<'_>) -> Result<(), BotError> {
-    let text = format!(
-        "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n/city ask weather info from a city in a specific format\n/pattern ask weather info from city without format\n
-The bot is going to ask a city in a specific format, finally the bot will provide the weather info.\n
-It would be really greatful if you take a look my GitHub, look how much work has this bot, if you like this bot give me
-an star or if you would like to self run it, fork the proyect please.\n
-<a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot </a>",
-        conf.username
-    );
-    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
-    Ok(())
-}
 // Function to send a message to a client.
 async fn send_message_client(
     chat_id: &i64,
@@ -274,15 +255,15 @@ struct Conf<'a> {
     db_controller: DbController,
     chat_id: &'a i64,
     user_id: u64,
-    username: &'a String,
+    username: &'a str,
     message: Message,
-    opwm_token: &'a String,
+    opwm_token: &'a str,
 }
-struct ProcessMessage {
+struct ProcessMessage<'a> {
     _me: String,
     api: AsyncApi,
     message: Message,
-    opwm_token: String,
+    opwm_token: &'a str,
     keypair: PKey<Private>,
 }
 
@@ -304,12 +285,8 @@ fn main() {
 
 async fn bot_main() -> Result<(), BotError> {
     // Initial setup to run the bot
-    let token = env::var("RUST_TELEGRAM_BOT_TOKEN").expect("RUST_TELEGRAM_BOT_TOKEN not set");
-    let api = AsyncApi::new(&token);
-    let opwm_token =
-        env::var("OPEN_WEATHER_MAP_API_TOKEN").expect("OPEN_WEATHER_MAP_API_TOKEN not set");
-    let binary_file = std::fs::read("./resources/key.pem").unwrap();
-    let keypair = Rsa::private_key_from_pem(&binary_file).unwrap();
+    let api = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
+    let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
     let keypair = PKey::from_rsa(keypair).unwrap();
     let me = api.get_me().await?.result.username.unwrap();
     // Cities are in database ?
@@ -344,7 +321,7 @@ async fn bot_main() -> Result<(), BotError> {
                 for update in response.result {
                     if let UpdateContent::Message(message) = update.content {
                         let api_clone = api.clone();
-                        let token_clone = opwm_token.clone();
+                        let token_clone = &OPEN_WEATHER_MAP_API_TOKEN;
                         let keypair_clone = keypair.clone();
                         let me_clone = me.clone();
                         // What we need to Process a Message.
@@ -381,7 +358,7 @@ async fn send_typing(message: &Message, api: &AsyncApi) -> Result<(), BotError> 
     Ok(())
 }
 // Process the message of each update
-async fn process_message(pm: ProcessMessage) -> Result<(), BotError> {
+async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
     // get the user that is writing the message
     let chat_id: i64 = (*pm.message.chat).id;
     let user_id: u64 = match &pm.message.from.as_deref() {
@@ -419,15 +396,12 @@ async fn process_message(pm: ProcessMessage) -> Result<(), BotError> {
         user_id,
         username: &user,
         message: pm.message.clone(),
-        opwm_token: &pm.opwm_token,
+        opwm_token: pm.opwm_token,
     };
     // State Machine that handles the user update.
     // Match the state and the message to know what to do.
     match state {
         ClientState::Initial => match pm.message.text.as_deref() {
-            Some("/start") | Some("/start@RustWeather77Bot") => {
-                start(conf).await?;
-            }
             Some("/default") | Some("/default@RustWeather77Bot") => {
                 match db_controller.get_client_city(&chat_id, user_id).await {
                     Ok(formated) => {
@@ -460,9 +434,6 @@ async fn process_message(pm: ProcessMessage) -> Result<(), BotError> {
         },
 
         ClientState::Pattern => match pm.message.text.as_deref() {
-            Some("/start") | Some("/start@RustWeather77Bot") => {
-                start(conf).await?;
-            }
             Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf).await?;
             }
@@ -479,9 +450,6 @@ async fn process_message(pm: ProcessMessage) -> Result<(), BotError> {
             _ => {}
         },
         ClientState::Number => match pm.message.text.as_deref() {
-            Some("/start") | Some("/start@RustWeather77Bot") => {
-                start(conf).await?;
-            }
             Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                 cancel(conf).await?;
             }
