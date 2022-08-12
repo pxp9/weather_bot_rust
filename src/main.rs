@@ -1,5 +1,6 @@
 use bb8_postgres::tokio_postgres::NoTls;
-use frankenstein::api_params::{ChatAction, SendChatActionParams};
+use frankenstein::api_params::ChatAction;
+use frankenstein::api_params::SendChatActionParams;
 use frankenstein::AsyncApi;
 use frankenstein::AsyncTelegramApi;
 use frankenstein::GetUpdatesParams;
@@ -10,16 +11,13 @@ use frankenstein::UpdateContent;
 use openssl::pkey::PKey;
 use openssl::pkey::Private;
 use openssl::rsa::Rsa;
-use std::fmt::Write;
 use tokio::runtime;
-use weather_bot_rust::db::BotDbError;
 use weather_bot_rust::db::ClientState;
 use weather_bot_rust::db::DbController;
 use weather_bot_rust::json_parse::*;
-use weather_bot_rust::BotError;
-use weather_bot_rust::BINARY_FILE;
-use weather_bot_rust::OPEN_WEATHER_MAP_API_TOKEN;
-use weather_bot_rust::RUST_TELEGRAM_BOT_TOKEN;
+use weather_bot_rust::{
+    BotError, BINARY_FILE, OPEN_WEATHER_MAP_API_TOKEN, RUST_TELEGRAM_BOT_TOKEN,
+};
 
 // Function to send a message to a client.
 async fn send_message_client(
@@ -35,20 +33,6 @@ async fn send_message_client(
         .parse_mode(ParseMode::Html)
         .build();
     api.send_message(&send_message_params).await?;
-    Ok(())
-}
-// What we do if users write /cancel in any state
-async fn cancel(conf: Conf<'_>) -> Result<(), BotError> {
-    let text = format!("Hi, {}!\n Your operation was canceled", conf.username);
-    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
-    conf.db_controller
-        .modify_before_state(conf.chat_id, conf.user_id, ClientState::Initial)
-        .await?;
-
-    conf.db_controller
-        .modify_state(conf.chat_id, conf.user_id, ClientState::Initial)
-        .await?;
-
     Ok(())
 }
 // Function to get daily weather info from Open Weather Map
@@ -120,128 +104,14 @@ async fn get_weather(
     send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
-async fn pattern_response(conf: Conf<'_>) -> Result<(), BotError> {
-    let number: usize = conf
-        .message
-        .text
-        .as_ref()
-        .unwrap()
-        .parse::<usize>()
-        .unwrap();
-
-    let selected = conf
-        .db_controller
-        .get_client_selected(conf.chat_id, conf.user_id)
-        .await?;
-    let (name, country, state) = match conf.db_controller.get_city_row(&selected, number).await {
-        Ok((n, c, s)) => (n, c, s),
-        Err(_) => (String::new(), String::new(), String::new()),
-    };
-    let n: usize = match state.as_str() {
-        "" => 2,
-        _ => 3,
-    };
-
-    match conf
-        .db_controller
-        .get_client_before_state(conf.chat_id, conf.user_id)
-        .await?
-    {
-        ClientState::Initial => {
-            Ok(get_weather(&conf, name.as_str(), country.as_str(), state.as_str(), n).await?)
-        }
-        ClientState::SetCity => {
-            let record = match n {
-                2 => {
-                    format!("{},{}", name, country)
-                }
-                3 => {
-                    format!("{},{},{}", name, country, state)
-                }
-                _ => {
-                    panic!("wtf is this number")
-                }
-            };
-            conf.db_controller
-                .modify_city(conf.chat_id, conf.user_id, record)
-                .await?;
-
-            city_updated_message(&conf).await?;
-            Ok(())
-        }
-        _ => {
-            panic!("wtf is this context")
-        }
-    }
-}
-
-// What we do if users write /pattern in Initial state.
-async fn pattern_city(conf: &Conf<'_>) -> Result<(), BotError> {
-    let text = format!(
-        "Hi, {}! Write a city , let me see if i find it",
-        conf.username
-    );
-    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
-    Ok(())
-}
 
 async fn not_default_message(conf: &Conf<'_>) -> Result<(), BotError> {
     let text = format!("Hi, {}! Setting default city...", conf.username);
     send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
     Ok(())
 }
-// What we do if users write a city in AskingPattern state.
-async fn find_city(conf: Conf<'_>) -> Result<(), BotError> {
-    let pattern = conf.message.text.as_ref().unwrap();
-
-    let vec = conf.db_controller.get_city_by_pattern(pattern).await?;
-
-    if vec.is_empty() || vec.len() > 30 {
-        let text = format!(
-            "Hi, {}! Your city {} was not found , try again",
-            conf.username, pattern,
-        );
-        send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
-        return Err(BotError::DbError(BotDbError::CityNotFoundError));
-    }
-
-    let mut i = 1;
-    let mut text: String = format!(
-        "Hi {}, i found these cities put a number to select one\n\n",
-        conf.username
-    );
-    for row in vec {
-        let name: String = row.get("name");
-        let country: String = row.get("country");
-        let state: String = row.get("state");
-        if state.is_empty() {
-            writeln!(&mut text, "{}. {},{}", i, name, country)?;
-        } else {
-            writeln!(&mut text, "{}. {},{},{}", i, name, country, state)?;
-        }
-        i += 1;
-    }
-    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
-
-    Ok(())
-}
-// What we do if we are in AskingNumber state and is not a number
-async fn not_number_message(conf: Conf<'_>) -> Result<(), BotError> {
-    let text = format!(
-        "Hi, {}! That's not a positive number in the range, try again",
-        conf.username
-    );
-    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
-    Ok(())
-}
-async fn city_updated_message(conf: &Conf<'_>) -> Result<(), BotError> {
-    let text = format!("Hi, {}! Your default city was updated", conf.username);
-    send_message_client(conf.chat_id, text, &conf.message, conf.api).await?;
-    Ok(())
-}
-
 async fn set_city(conf: Conf<'_>, chat_id: &i64, user_id: u64) -> Result<(), BotError> {
-    pattern_city(&conf).await?;
+    // call pattern_city here
     conf.db_controller
         .modify_state(chat_id, user_id, ClientState::Pattern)
         .await?;
@@ -254,7 +124,6 @@ struct Conf<'a> {
     api: &'a AsyncApi,
     db_controller: DbController,
     chat_id: &'a i64,
-    user_id: u64,
     username: &'a str,
     message: Message,
     opwm_token: &'a str,
@@ -393,7 +262,6 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
         api: &pm.api,
         db_controller: db_controller.clone(),
         chat_id: &chat_id,
-        user_id,
         username: &user,
         message: pm.message.clone(),
         opwm_token: pm.opwm_token,
@@ -413,6 +281,7 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
                         if n == 3 {
                             state = v[2];
                         }
+                        // Not deleted yet, because i get warnings if i delete get_weather
                         get_weather(&conf, city, country, state, n).await?
                     }
                     Err(_) => {
@@ -421,54 +290,14 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
                     }
                 }
             }
-            Some("/pattern") | Some("/pattern@RustWeather77Bot") => {
-                pattern_city(&conf).await?;
-                db_controller
-                    .modify_state(&chat_id, user_id, ClientState::Pattern)
-                    .await?;
-            }
             Some("/set_city") | Some("/set_city@RustWeather77Bot") => {
                 set_city(conf, &chat_id, user_id).await?;
             }
             _ => {}
         },
 
-        ClientState::Pattern => match pm.message.text.as_deref() {
-            Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
-                cancel(conf).await?;
-            }
-            Some(text) => {
-                if (find_city(conf).await).is_ok() {
-                    db_controller
-                        .modify_selected(&chat_id, user_id, text.to_string())
-                        .await?;
-                    db_controller
-                        .modify_state(&chat_id, user_id, ClientState::Number)
-                        .await?;
-                }
-            }
-            _ => {}
-        },
-        ClientState::Number => match pm.message.text.as_deref() {
-            Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
-                cancel(conf).await?;
-            }
-            Some(text) => match text.parse::<usize>() {
-                Ok(_) => {
-                    pattern_response(conf).await?;
-                    db_controller
-                        .modify_before_state(&chat_id, user_id, ClientState::Initial)
-                        .await?;
-                    db_controller
-                        .modify_state(&chat_id, user_id, ClientState::Initial)
-                        .await?;
-                }
-                Err(_) => {
-                    not_number_message(conf).await?;
-                }
-            },
-            _ => {}
-        },
+        ClientState::Pattern => {}
+        ClientState::Number => {}
 
         _ => {}
     }

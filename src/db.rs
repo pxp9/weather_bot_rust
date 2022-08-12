@@ -104,13 +104,13 @@ impl DbController {
 
     pub async fn search_city(
         &self,
-        n: &String,
-        c: &String,
-        s: &String,
+        n: &str,
+        c: &str,
+        s: &str,
     ) -> Result<(f64, f64, String, String, String), BotDbError> {
         let connection = self.pool.get().await?;
 
-        let vec: Vec<Row> = connection.query(SEARCH_CITY, &[n, c, s]).await?;
+        let vec: Vec<Row> = connection.query(SEARCH_CITY, &[&n, &c, &s]).await?;
         if vec.len() == 1 {
             Ok((
                 vec[0].get("lon"),
