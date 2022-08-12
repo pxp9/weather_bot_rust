@@ -43,26 +43,19 @@ async fn get_weather(
     state: &str,
     n: usize,
 ) -> Result<(), BotError> {
-    let (lon, lat, city_fmt, country_fmt, state_fmt) = match conf
-        .db_controller
-        .search_city(
-            &(*city).to_string(),
-            &(*country).to_string(),
-            &(*state).to_string(),
-        )
-        .await
-    {
-        Ok((lon, lat, city_fmt, country_fmt, state_fmt)) => {
-            (lon, lat, city_fmt, country_fmt, state_fmt)
-        }
-        Err(_) => (
-            -181.0,
-            -91.0,
-            String::from(""),
-            String::from(""),
-            String::from(""),
-        ),
-    };
+    let (lon, lat, city_fmt, country_fmt, state_fmt) =
+        match conf.db_controller.search_city(city, country, state).await {
+            Ok((lon, lat, city_fmt, country_fmt, state_fmt)) => {
+                (lon, lat, city_fmt, country_fmt, state_fmt)
+            }
+            Err(_) => (
+                -181.0,
+                -91.0,
+                String::from(""),
+                String::from(""),
+                String::from(""),
+            ),
+        };
     if lat == -91.0 {
         println!(
             "User {} ,  City {} not found",
