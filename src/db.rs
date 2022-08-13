@@ -37,8 +37,8 @@ pub struct DbController {
 pub enum ClientState {
     #[postgres(name = "initial")]
     Initial,
-    #[postgres(name = "pattern")]
-    Pattern,
+    #[postgres(name = "find_city")]
+    FindCity,
     #[postgres(name = "number")]
     Number,
     #[postgres(name = "set_city")]
@@ -337,7 +337,7 @@ mod db_test {
         // testing modify state
 
         let n = db_controller
-            .modify_state(&chat_id, user_id, ClientState::Pattern)
+            .modify_state(&chat_id, user_id, ClientState::FindCity)
             .await
             .unwrap();
 
@@ -349,7 +349,7 @@ mod db_test {
             .await
             .unwrap();
 
-        assert_eq!(actual_state, ClientState::Pattern);
+        assert_eq!(actual_state, ClientState::FindCity);
 
         let n = db_controller
             .modify_state(&chat_id, user_id, ClientState::Initial)

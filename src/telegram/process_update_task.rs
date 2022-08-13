@@ -61,14 +61,14 @@ impl ProcessUpdateTask {
                     Some("/pattern") | Some("/pattern@RustWeather77Bot") => {
                         Self::pattern_city(message, &user, &api).await?;
                         db_controller
-                            .modify_state(&chat_id, user_id, ClientState::Pattern)
+                            .modify_state(&chat_id, user_id, ClientState::FindCity)
                             .await?;
                     }
 
                     _ => {}
                 },
 
-                ClientState::Pattern => match message.text.as_deref() {
+                ClientState::FindCity => match message.text.as_deref() {
                     Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
                         Self::cancel(&db_controller, message, &api).await?;
                     }

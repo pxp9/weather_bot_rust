@@ -106,7 +106,7 @@ async fn not_default_message(conf: &Conf<'_>) -> Result<(), BotError> {
 async fn set_city(conf: Conf<'_>, chat_id: &i64, user_id: u64) -> Result<(), BotError> {
     // call pattern_city here
     conf.db_controller
-        .modify_state(chat_id, user_id, ClientState::Pattern)
+        .modify_state(chat_id, user_id, ClientState::FindCity)
         .await?;
     conf.db_controller
         .modify_before_state(chat_id, user_id, ClientState::SetCity)
@@ -289,7 +289,7 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
             _ => {}
         },
 
-        ClientState::Pattern => {}
+        ClientState::FindCity => {}
         ClientState::Number => {}
 
         _ => {}
