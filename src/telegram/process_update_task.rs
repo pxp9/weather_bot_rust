@@ -1,6 +1,6 @@
 use crate::db::BotDbError;
 use crate::db::ClientState;
-use crate::db::DbController;
+use crate::db::Repo;
 use crate::json_parse::*;
 use crate::BotError;
 use crate::BINARY_FILE;
@@ -26,8 +26,6 @@ use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
 use std::fmt::Write;
 
-const TASK_TYPE: &str = "update";
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "fang::serde")]
 pub struct ProcessUpdateTask {
@@ -43,14 +41,14 @@ impl ProcessUpdateTask {
         log::info!("Received a message {:?}", self.update);
 
         let api = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
-        let db_controller = DbController::new().await?;
+        let repo = Repo::new().await?;
 
         if let UpdateContent::Message(message) = &self.update.content {
             let (chat_id, user_id, user) = Self::get_info_from_message(message);
 
             Self::send_typing(message, &api).await?;
 
-            let state = Self::fetch_state(&db_controller, &chat_id, user_id, user.clone()).await?;
+            let state = Self::fetch_state(&repo, &chat_id, user_id, user.clone()).await?;
 
             match state {
                 ClientState::Initial => match message.text.as_deref() {
@@ -60,8 +58,7 @@ impl ProcessUpdateTask {
 
                     Some("/pattern") | Some("/pattern@RustWeather77Bot") => {
                         Self::pattern_city(message, &user, &api).await?;
-                        db_controller
-                            .modify_state(&chat_id, user_id, ClientState::FindCity)
+                        repo.modify_state(&chat_id, user_id, ClientState::FindCity)
                             .await?;
                     }
 
@@ -70,15 +67,13 @@ impl ProcessUpdateTask {
 
                 ClientState::FindCity => match message.text.as_deref() {
                     Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
-                        Self::cancel(&db_controller, message, &api).await?;
+                        Self::cancel(&repo, message, &api).await?;
                     }
                     Some(text) => {
-                        if (Self::find_city(&db_controller, &user, message, &api).await).is_ok() {
-                            db_controller
-                                .modify_selected(&chat_id, user_id, text.to_string())
+                        if (Self::find_city(&repo, &user, message, &api).await).is_ok() {
+                            repo.modify_selected(&chat_id, user_id, text.to_string())
                                 .await?;
-                            db_controller
-                                .modify_state(&chat_id, user_id, ClientState::Number)
+                            repo.modify_state(&chat_id, user_id, ClientState::Number)
                                 .await?;
                         }
                     }
@@ -87,16 +82,14 @@ impl ProcessUpdateTask {
                 },
                 ClientState::Number => match message.text.as_deref() {
                     Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
-                        Self::cancel(&db_controller, message, &api).await?;
+                        Self::cancel(&repo, message, &api).await?;
                     }
                     Some(text) => match text.parse::<usize>() {
                         Ok(_) => {
-                            Self::pattern_response(&db_controller, message, &api).await?;
-                            db_controller
-                                .modify_before_state(&chat_id, user_id, ClientState::Initial)
+                            Self::pattern_response(&repo, message, &api).await?;
+                            repo.modify_before_state(&chat_id, user_id, ClientState::Initial)
                                 .await?;
-                            db_controller
-                                .modify_state(&chat_id, user_id, ClientState::Initial)
+                            repo.modify_state(&chat_id, user_id, ClientState::Initial)
                                 .await?;
                         }
                         Err(_) => {
@@ -112,23 +105,21 @@ impl ProcessUpdateTask {
     }
 
     pub async fn fetch_state(
-        db_controller: &DbController,
+        repo: &Repo,
         chat_id: &i64,
         user_id: u64,
         user: String,
     ) -> Result<ClientState, BotError> {
         // Maybe here can be recycled pool from AsyncQueue from Fang for now this is fine
-        let state: ClientState = if !db_controller.check_user_exists(chat_id, user_id).await? {
+        let state: ClientState = if !repo.check_user_exists(chat_id, user_id).await? {
             let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
             let keypair = PKey::from_rsa(keypair).unwrap();
 
-            db_controller
-                .insert_client(chat_id, user_id, user, &keypair)
-                .await?;
+            repo.insert_client(chat_id, user_id, user, &keypair).await?;
 
             ClientState::Initial
         } else {
-            db_controller.get_client_state(chat_id, user_id).await?
+            repo.get_client_state(chat_id, user_id).await?
         };
 
         Ok(state)
@@ -200,36 +191,30 @@ impl ProcessUpdateTask {
     }
 
     // What we do if users write /cancel in any state
-    async fn cancel(
-        db_controller: &DbController,
-        message: &Message,
-        api: &AsyncApi,
-    ) -> Result<(), BotError> {
+    async fn cancel(repo: &Repo, message: &Message, api: &AsyncApi) -> Result<(), BotError> {
         let (chat_id, user_id, username) = Self::get_info_from_message(message);
 
         let text = format!("Hi, {}!\n Your operation was canceled", username);
         Self::send_message(message, &text, api).await?;
 
-        db_controller
-            .modify_before_state(&chat_id, user_id, ClientState::Initial)
+        repo.modify_before_state(&chat_id, user_id, ClientState::Initial)
             .await?;
 
-        db_controller
-            .modify_state(&chat_id, user_id, ClientState::Initial)
+        repo.modify_state(&chat_id, user_id, ClientState::Initial)
             .await?;
 
         Ok(())
     }
 
     async fn find_city(
-        db_controller: &DbController,
+        repo: &Repo,
         username: &str,
         message: &Message,
         api: &AsyncApi,
     ) -> Result<(), BotError> {
         let pattern = message.text.as_ref().unwrap();
 
-        let vec = db_controller.get_city_by_pattern(pattern).await?;
+        let vec = repo.get_city_by_pattern(pattern).await?;
 
         if vec.is_empty() || vec.len() > 30 {
             let text = format!(
@@ -262,7 +247,7 @@ impl ProcessUpdateTask {
     }
 
     async fn pattern_response(
-        db_controller: &DbController,
+        repo: &Repo,
         message: &Message,
         api: &AsyncApi,
     ) -> Result<(), BotError> {
@@ -270,9 +255,9 @@ impl ProcessUpdateTask {
 
         let number: usize = message.text.as_ref().unwrap().parse::<usize>().unwrap();
 
-        let selected = db_controller.get_client_selected(&chat_id, user_id).await?;
+        let selected = repo.get_client_selected(&chat_id, user_id).await?;
 
-        let (name, country, state) = match db_controller.get_city_row(&selected, number).await {
+        let (name, country, state) = match repo.get_city_row(&selected, number).await {
             Ok((n, c, s)) => (n, c, s),
             Err(_) => (String::new(), String::new(), String::new()),
         };
@@ -281,12 +266,9 @@ impl ProcessUpdateTask {
             _ => 3,
         };
 
-        match db_controller
-            .get_client_before_state(&chat_id, user_id)
-            .await?
-        {
+        match repo.get_client_before_state(&chat_id, user_id).await? {
             ClientState::Initial => Ok(Self::get_weather(
-                db_controller,
+                repo,
                 message,
                 api,
                 name.as_str(),
@@ -309,7 +291,7 @@ impl ProcessUpdateTask {
                     }
                 };
 
-                db_controller.modify_city(&chat_id, user_id, record).await?;
+                repo.modify_city(&chat_id, user_id, record).await?;
 
                 Self::city_updated_message(message, &username, api).await?;
                 Ok(())
@@ -321,7 +303,7 @@ impl ProcessUpdateTask {
     }
 
     async fn get_weather(
-        db_controller: &DbController,
+        repo: &Repo,
         message: &Message,
         api: &AsyncApi,
         city: &str,
@@ -332,7 +314,7 @@ impl ProcessUpdateTask {
         let (_, _, username) = Self::get_info_from_message(message);
 
         let (lon, lat, city_fmt, country_fmt, state_fmt) =
-            match db_controller.search_city(city, country, state).await {
+            match repo.search_city(city, country, state).await {
                 Ok((lon, lat, city_fmt, country_fmt, state_fmt)) => {
                     (lon, lat, city_fmt, country_fmt, state_fmt)
                 }
@@ -413,9 +395,5 @@ impl AsyncRunnable for ProcessUpdateTask {
         self.process().await.unwrap();
 
         Ok(())
-    }
-
-    fn task_type(&self) -> String {
-        TASK_TYPE.to_string()
     }
 }

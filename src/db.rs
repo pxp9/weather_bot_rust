@@ -28,7 +28,7 @@ pub enum BotDbError {
 }
 
 #[derive(Debug, Clone)]
-pub struct DbController {
+pub struct Repo {
     pool: Pool<PostgresConnectionManager<NoTls>>,
 }
 
@@ -56,7 +56,7 @@ const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
 
-impl DbController {
+impl Repo {
     async fn pool(url: &str) -> Result<Pool<PostgresConnectionManager<NoTls>>, BotDbError> {
         let pg_mgr = PostgresConnectionManager::new_from_stringlike(url, NoTls)?;
 
@@ -65,7 +65,7 @@ impl DbController {
 
     pub async fn new() -> Result<Self, BotDbError> {
         let pl = Self::pool(&DATABASE_URL).await?;
-        Ok(DbController { pool: pl })
+        Ok(Repo { pool: pl })
     }
 
     // Encrypt a String into a BYTEA
@@ -306,7 +306,7 @@ mod db_test {
     #[tokio::test]
     async fn test_modify_state() {
         // Pick a random user of the DB
-        let db_controller = DbController::new().await.unwrap();
+        let db_controller = Repo::new().await.unwrap();
         let connection = db_controller.pool.get().await.unwrap();
 
         let binary_file = std::fs::read("./resources/key.pem").unwrap();
@@ -332,7 +332,7 @@ mod db_test {
         arr.copy_from_slice(bytes);
         let user_id = as_u64_le(&arr);
 
-        let user: String = DbController::decrypt_string(row.get("user"), &keypair).unwrap();
+        let user: String = Repo::decrypt_string(row.get("user"), &keypair).unwrap();
         assert_eq!(user, String::from("@ItzPXP9"));
         // testing modify state
 
