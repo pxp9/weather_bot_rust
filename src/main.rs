@@ -11,10 +11,11 @@ use frankenstein::UpdateContent;
 use openssl::pkey::PKey;
 use openssl::pkey::Private;
 use openssl::rsa::Rsa;
-use tokio::runtime;
 use weather_bot_rust::db::ClientState;
-use weather_bot_rust::db::DbController;
+use weather_bot_rust::db::Repo;
 use weather_bot_rust::json_parse::*;
+use weather_bot_rust::telegram::handler::Handler;
+use weather_bot_rust::workers;
 use weather_bot_rust::{
     BotError, BINARY_FILE, OPEN_WEATHER_MAP_API_TOKEN, RUST_TELEGRAM_BOT_TOKEN,
 };
@@ -44,7 +45,7 @@ async fn get_weather(
     n: usize,
 ) -> Result<(), BotError> {
     let (lon, lat, city_fmt, country_fmt, state_fmt) =
-        match conf.db_controller.search_city(city, country, state).await {
+        match conf.repo.search_city(city, country, state).await {
             Ok((lon, lat, city_fmt, country_fmt, state_fmt)) => {
                 (lon, lat, city_fmt, country_fmt, state_fmt)
             }
@@ -105,17 +106,17 @@ async fn not_default_message(conf: &Conf<'_>) -> Result<(), BotError> {
 }
 async fn set_city(conf: Conf<'_>, chat_id: &i64, user_id: u64) -> Result<(), BotError> {
     // call pattern_city here
-    conf.db_controller
+    conf.repo
         .modify_state(chat_id, user_id, ClientState::FindCity)
         .await?;
-    conf.db_controller
+    conf.repo
         .modify_before_state(chat_id, user_id, ClientState::SetCity)
         .await?;
     Ok(())
 }
 struct Conf<'a> {
     api: &'a AsyncApi,
-    db_controller: DbController,
+    repo: Repo,
     chat_id: &'a i64,
     username: &'a str,
     message: Message,
@@ -129,20 +130,15 @@ struct ProcessMessage<'a> {
     keypair: PKey<Private>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     pretty_env_logger::init();
 
-    let rt = runtime::Builder::new_multi_thread()
-        .worker_threads(6)
-        .thread_name("my thread")
-        .enable_io()
-        .enable_time()
-        .build()
-        .unwrap();
-    // Execution of code
-    rt.block_on(async {
-        bot_main().await.unwrap();
-    });
+    workers::start_workers().await;
+
+    let mut handler = Handler::new().await;
+
+    handler.start().await;
 }
 
 async fn bot_main() -> Result<(), BotError> {
@@ -213,7 +209,7 @@ async fn bot_main() -> Result<(), BotError> {
 // Function to make the bot Typing ...
 async fn send_typing(message: &Message, api: &AsyncApi) -> Result<(), BotError> {
     let send_chat_action_params = SendChatActionParams::builder()
-        .chat_id((*((*message).chat)).id)
+        .chat_id((*message).chat.id)
         .action(ChatAction::Typing)
         .build();
     api.send_chat_action(&send_chat_action_params).await?;
@@ -236,24 +232,23 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
     };
     send_typing(&pm.message, &pm.api).await?;
     // check if the user is in the database.
-    let db_controller = DbController::new().await?;
+    let repo = Repo::new().await?;
 
     let state: ClientState;
     // if user is not in the database, insert the user with Initial state
     // if it is , check its state.
-    if !db_controller.check_user_exists(&chat_id, user_id).await? {
-        db_controller
-            .insert_client(&chat_id, user_id, user.clone(), &pm.keypair)
+    if !repo.check_user_exists(&chat_id, user_id).await? {
+        repo.insert_client(&chat_id, user_id, user.clone(), &pm.keypair)
             .await?;
         state = ClientState::Initial;
     } else {
-        state = db_controller.get_client_state(&chat_id, user_id).await?;
+        state = repo.get_client_state(&chat_id, user_id).await?;
     }
 
     // All what we need to handle the updates.
     let conf = Conf {
         api: &pm.api,
-        db_controller: db_controller.clone(),
+        repo: repo.clone(),
         chat_id: &chat_id,
         username: &user,
         message: pm.message.clone(),
@@ -264,7 +259,7 @@ async fn process_message(pm: ProcessMessage<'_>) -> Result<(), BotError> {
     match state {
         ClientState::Initial => match pm.message.text.as_deref() {
             Some("/default") | Some("/default@RustWeather77Bot") => {
-                match db_controller.get_client_city(&chat_id, user_id).await {
+                match repo.get_client_city(&chat_id, user_id).await {
                     Ok(formated) => {
                         let v: Vec<&str> = formated.as_str().split(',').collect();
                         let n = v.len();

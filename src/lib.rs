@@ -1,6 +1,7 @@
 pub mod db;
 pub mod json_parse;
 pub mod telegram;
+pub mod workers;
 
 use lazy_static::lazy_static;
 lazy_static! {
