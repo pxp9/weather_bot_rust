@@ -26,6 +26,8 @@ use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
 use std::fmt::Write;
 
+const BOT_NAME: &str = "RustWeather77Bot";
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "fang::serde")]
 pub struct ProcessUpdateTask {
@@ -37,6 +39,22 @@ impl ProcessUpdateTask {
         Self { update }
     }
 
+    fn get_text_from_message(message: &Message) -> Option<&str> {
+        message.text.as_deref()
+    }
+
+    fn check_command(command: &str, text: &Option<&str>) -> bool {
+        let handle = &format!("/{}@{}", command, BOT_NAME);
+        *text == Some(command) || *text == Some(handle)
+    }
+
+    async fn return_to_initial(repo: &Repo, chat_id: &i64, user_id: u64) -> Result<(), BotError> {
+        repo.modify_before_state(chat_id, user_id, ClientState::Initial)
+            .await?;
+        repo.modify_state(chat_id, user_id, ClientState::Initial)
+            .await?;
+        Ok(())
+    }
     pub async fn process(&self) -> Result<(), BotError> {
         log::info!("Received a message {:?}", self.update);
 
@@ -50,54 +68,47 @@ impl ProcessUpdateTask {
 
             let state = Self::fetch_state(&repo, &chat_id, user_id, user.clone()).await?;
 
-            match state {
-                ClientState::Initial => match message.text.as_deref() {
-                    Some("/start") | Some("/start@RustWeather77Bot") => {
-                        Self::start(message, &user, &api).await?;
-                    }
+            let text = Self::get_text_from_message(message);
 
-                    Some("/pattern") | Some("/pattern@RustWeather77Bot") => {
+            if Self::check_command("cancel", &text) {
+                Self::cancel(&repo, message, &api).await?;
+                return Ok(());
+            }
+
+            match state {
+                ClientState::Initial => {
+                    if Self::check_command("start", &text) {
+                        Self::start(message, &user, &api).await?;
+                    } else if Self::check_command("pattern", &text) {
                         Self::pattern_city(message, &user, &api).await?;
                         repo.modify_state(&chat_id, user_id, ClientState::FindCity)
                             .await?;
                     }
+                }
 
-                    _ => {}
-                },
-
-                ClientState::FindCity => match message.text.as_deref() {
-                    Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
-                        Self::cancel(&repo, message, &api).await?;
-                    }
-                    Some(text) => {
+                ClientState::FindCity => {
+                    if let Some(pattern) = &text {
                         if (Self::find_city(&repo, &user, message, &api).await).is_ok() {
-                            repo.modify_selected(&chat_id, user_id, text.to_string())
+                            repo.modify_selected(&chat_id, user_id, pattern.to_string())
                                 .await?;
                             repo.modify_state(&chat_id, user_id, ClientState::Number)
                                 .await?;
                         }
                     }
-
-                    _ => {}
-                },
-                ClientState::Number => match message.text.as_deref() {
-                    Some("/cancel") | Some("/cancel@RustWeather77Bot") => {
-                        Self::cancel(&repo, message, &api).await?;
+                }
+                ClientState::Number => {
+                    if let Some(number) = &text {
+                        match number.parse::<usize>() {
+                            Ok(_) => {
+                                Self::pattern_response(&repo, message, &api).await?;
+                                Self::return_to_initial(&repo, &chat_id, user_id).await?;
+                            }
+                            Err(_) => {
+                                Self::not_number_message(message, &user, &api).await?;
+                            }
+                        }
                     }
-                    Some(text) => match text.parse::<usize>() {
-                        Ok(_) => {
-                            Self::pattern_response(&repo, message, &api).await?;
-                            repo.modify_before_state(&chat_id, user_id, ClientState::Initial)
-                                .await?;
-                            repo.modify_state(&chat_id, user_id, ClientState::Initial)
-                                .await?;
-                        }
-                        Err(_) => {
-                            Self::not_number_message(message, &user, &api).await?;
-                        }
-                    },
-                    _ => {}
-                },
+                }
                 _ => {}
             }
         }
@@ -197,11 +208,7 @@ impl ProcessUpdateTask {
         let text = format!("Hi, {}!\n Your operation was canceled", username);
         Self::send_message(message, &text, api).await?;
 
-        repo.modify_before_state(&chat_id, user_id, ClientState::Initial)
-            .await?;
-
-        repo.modify_state(&chat_id, user_id, ClientState::Initial)
-            .await?;
+        Self::return_to_initial(repo, &chat_id, user_id).await?;
 
         Ok(())
     }
