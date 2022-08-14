@@ -25,9 +25,11 @@ use frankenstein::UpdateContent;
 use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
 use std::fmt::Write;
+use typed_builder::TypedBuilder;
 
 const BOT_NAME: &str = "RustWeather77Bot";
 
+#[derive(TypedBuilder)]
 pub struct Params<'a> {
     api: &'a AsyncApi,
     repo: &'a Repo,
@@ -76,15 +78,16 @@ impl ProcessUpdateTask {
 
         if let UpdateContent::Message(message) = &self.update.content {
             let (chat_id, user_id, user) = Self::get_info_from_message(message);
+            let username: &str = &user;
 
-            let params = Params {
-                api: &api,
-                repo: &repo,
-                chat_id: &chat_id,
-                user_id,
-                username: &user,
-                message,
-            };
+            let params = Params::builder()
+                .api(&api)
+                .repo(&repo)
+                .chat_id(&chat_id)
+                .user_id(user_id)
+                .username(username)
+                .message(message)
+                .build();
 
             Self::send_typing(&params).await?;
 
