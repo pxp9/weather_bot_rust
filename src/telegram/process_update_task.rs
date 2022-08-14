@@ -120,6 +120,7 @@ impl ProcessUpdateTask {
                             }
                             Err(_) => {
                                 Self::not_default_message(&params).await?;
+                                Self::set_city(&params).await?;
                             }
                         }
                     } else if Self::check_command("start", &text) {
@@ -146,7 +147,6 @@ impl ProcessUpdateTask {
                             }
                             Err(_) => {
                                 Self::not_number_message(&params).await?;
-                                Self::set_city(&params).await?;
                             }
                         }
                     }
