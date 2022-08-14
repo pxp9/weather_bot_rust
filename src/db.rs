@@ -28,7 +28,7 @@ pub enum BotDbError {
 }
 
 #[derive(Debug, Clone)]
-pub struct DbController {
+pub struct Repo {
     pool: Pool<PostgresConnectionManager<NoTls>>,
 }
 
@@ -37,8 +37,8 @@ pub struct DbController {
 pub enum ClientState {
     #[postgres(name = "initial")]
     Initial,
-    #[postgres(name = "pattern")]
-    Pattern,
+    #[postgres(name = "find_city")]
+    FindCity,
     #[postgres(name = "number")]
     Number,
     #[postgres(name = "set_city")]
@@ -56,7 +56,7 @@ const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
 
-impl DbController {
+impl Repo {
     async fn pool(url: &str) -> Result<Pool<PostgresConnectionManager<NoTls>>, BotDbError> {
         let pg_mgr = PostgresConnectionManager::new_from_stringlike(url, NoTls)?;
 
@@ -65,7 +65,7 @@ impl DbController {
 
     pub async fn new() -> Result<Self, BotDbError> {
         let pl = Self::pool(&DATABASE_URL).await?;
-        Ok(DbController { pool: pl })
+        Ok(Repo { pool: pl })
     }
 
     // Encrypt a String into a BYTEA
@@ -104,13 +104,15 @@ impl DbController {
 
     pub async fn search_city(
         &self,
-        n: &String,
-        c: &String,
-        s: &String,
+        name: &str,
+        country: &str,
+        state: &str,
     ) -> Result<(f64, f64, String, String, String), BotDbError> {
         let connection = self.pool.get().await?;
 
-        let vec: Vec<Row> = connection.query(SEARCH_CITY, &[n, c, s]).await?;
+        let vec: Vec<Row> = connection
+            .query(SEARCH_CITY, &[&name, &country, &state])
+            .await?;
         if vec.len() == 1 {
             Ok((
                 vec[0].get("lon"),
@@ -306,7 +308,7 @@ mod db_test {
     #[tokio::test]
     async fn test_modify_state() {
         // Pick a random user of the DB
-        let db_controller = DbController::new().await.unwrap();
+        let db_controller = Repo::new().await.unwrap();
         let connection = db_controller.pool.get().await.unwrap();
 
         let binary_file = std::fs::read("./resources/key.pem").unwrap();
@@ -332,12 +334,12 @@ mod db_test {
         arr.copy_from_slice(bytes);
         let user_id = as_u64_le(&arr);
 
-        let user: String = DbController::decrypt_string(row.get("user"), &keypair).unwrap();
+        let user: String = Repo::decrypt_string(row.get("user"), &keypair).unwrap();
         assert_eq!(user, String::from("@ItzPXP9"));
         // testing modify state
 
         let n = db_controller
-            .modify_state(&chat_id, user_id, ClientState::Pattern)
+            .modify_state(&chat_id, user_id, ClientState::FindCity)
             .await
             .unwrap();
 
@@ -349,7 +351,7 @@ mod db_test {
             .await
             .unwrap();
 
-        assert_eq!(actual_state, ClientState::Pattern);
+        assert_eq!(actual_state, ClientState::FindCity);
 
         let n = db_controller
             .modify_state(&chat_id, user_id, ClientState::Initial)

@@ -2,7 +2,7 @@
 
 -- WEATHER BOT TABLES
 
-CREATE TYPE client_state AS ENUM ('initial', 'set_city', 'pattern' , 'number');
+CREATE TYPE client_state AS ENUM ('initial', 'set_city', 'find_city' , 'number');
 
 CREATE TABLE chat (
   id BIGINT , 

@@ -12,16 +12,10 @@ pub struct Handler {
     queue: AsyncQueue<NoTls>,
 }
 
-impl Default for Handler {
-    fn default() -> Handler {
-        Self::new()
-    }
-}
-
 impl Handler {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let client = ApiClient::new();
-        let queue = Self::init_queue();
+        let queue = Self::init_queue().await;
 
         Self { client, queue }
     }
@@ -44,11 +38,15 @@ impl Handler {
         }
     }
 
-    fn init_queue() -> AsyncQueue<NoTls> {
-        AsyncQueue::builder()
+    async fn init_queue() -> AsyncQueue<NoTls> {
+        let mut queue: AsyncQueue<NoTls> = AsyncQueue::builder()
             .uri(DATABASE_URL.clone())
             .max_pool_size(1_u32)
             .duplicated_tasks(true)
-            .build()
+            .build();
+
+        queue.connect(NoTls).await.unwrap();
+
+        queue
     }
 }
