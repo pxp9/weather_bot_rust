@@ -104,13 +104,15 @@ impl Repo {
 
     pub async fn search_city(
         &self,
-        n: &str,
-        c: &str,
-        s: &str,
+        name: &str,
+        country: &str,
+        state: &str,
     ) -> Result<(f64, f64, String, String, String), BotDbError> {
         let connection = self.pool.get().await?;
 
-        let vec: Vec<Row> = connection.query(SEARCH_CITY, &[&n, &c, &s]).await?;
+        let vec: Vec<Row> = connection
+            .query(SEARCH_CITY, &[&name, &country, &state])
+            .await?;
         if vec.len() == 1 {
             Ok((
                 vec[0].get("lon"),
