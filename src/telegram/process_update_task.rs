@@ -30,13 +30,13 @@ use typed_builder::TypedBuilder;
 const BOT_NAME: &str = "RustWeather77Bot";
 
 #[derive(TypedBuilder)]
-pub struct Params<'a> {
-    api: &'a AsyncApi,
-    repo: &'a Repo,
-    chat_id: &'a i64,
+pub struct Params {
+    api: AsyncApi,
+    repo: Repo,
+    chat_id: i64,
     user_id: u64,
-    username: &'a str,
-    message: &'a Message,
+    username: String,
+    message: Message,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -59,14 +59,14 @@ impl ProcessUpdateTask {
         *text == Some(command) || *text == Some(handle)
     }
 
-    async fn return_to_initial(params: &Params<'_>) -> Result<(), BotError> {
+    async fn return_to_initial(params: &Params) -> Result<(), BotError> {
         params
             .repo
-            .modify_before_state(params.chat_id, params.user_id, ClientState::Initial)
+            .modify_before_state(&params.chat_id, params.user_id, ClientState::Initial)
             .await?;
         params
             .repo
-            .modify_state(params.chat_id, params.user_id, ClientState::Initial)
+            .modify_state(&params.chat_id, params.user_id, ClientState::Initial)
             .await?;
         Ok(())
     }
@@ -77,16 +77,15 @@ impl ProcessUpdateTask {
         let repo = Repo::new().await?;
 
         if let UpdateContent::Message(message) = &self.update.content {
-            let (chat_id, user_id, user) = Self::get_info_from_message(message);
-            let username: &str = &user;
+            let (chat_id, user_id, username) = Self::get_info_from_message(message);
 
             let params = Params::builder()
-                .api(&api)
-                .repo(&repo)
-                .chat_id(&chat_id)
+                .api(api)
+                .repo(repo)
+                .chat_id(chat_id)
                 .user_id(user_id)
                 .username(username)
-                .message(message)
+                .message(message.clone())
                 .build();
 
             Self::send_typing(&params).await?;
@@ -105,10 +104,12 @@ impl ProcessUpdateTask {
                     if Self::check_command("pattern", &text) {
                         Self::pattern_city(&params).await?;
 
-                        repo.modify_state(&chat_id, user_id, ClientState::FindCity)
+                        params
+                            .repo
+                            .modify_state(&chat_id, user_id, ClientState::FindCity)
                             .await?;
                     } else if Self::check_command("default", &text) {
-                        match repo.get_client_city(&chat_id, user_id).await {
+                        match params.repo.get_client_city(&chat_id, user_id).await {
                             Ok(formated) => {
                                 let vec: Vec<&str> = formated.as_str().split(',').collect();
                                 let n = vec.len();
@@ -134,9 +135,13 @@ impl ProcessUpdateTask {
                 ClientState::FindCity => {
                     if let Some(pattern) = &text {
                         if (Self::find_city(&params).await).is_ok() {
-                            repo.modify_selected(&chat_id, user_id, pattern.to_string())
+                            params
+                                .repo
+                                .modify_selected(&chat_id, user_id, pattern.to_string())
                                 .await?;
-                            repo.modify_state(&chat_id, user_id, ClientState::Number)
+                            params
+                                .repo
+                                .modify_state(&chat_id, user_id, ClientState::Number)
                                 .await?;
                         }
                     }
@@ -160,11 +165,11 @@ impl ProcessUpdateTask {
         Ok(())
     }
 
-    pub async fn fetch_state(params: &Params<'_>) -> Result<ClientState, BotError> {
+    pub async fn fetch_state(params: &Params) -> Result<ClientState, BotError> {
         // Maybe here can be recycled pool from AsyncQueue from Fang for now this is fine
         let state: ClientState = if !params
             .repo
-            .check_user_exists(params.chat_id, params.user_id)
+            .check_user_exists(&params.chat_id, params.user_id)
             .await?
         {
             let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
@@ -173,7 +178,7 @@ impl ProcessUpdateTask {
             params
                 .repo
                 .insert_client(
-                    params.chat_id,
+                    &params.chat_id,
                     params.user_id,
                     params.username.to_string(),
                     &keypair,
@@ -184,7 +189,7 @@ impl ProcessUpdateTask {
         } else {
             params
                 .repo
-                .get_client_state(params.chat_id, params.user_id)
+                .get_client_state(&params.chat_id, params.user_id)
                 .await?
         };
 
@@ -208,7 +213,7 @@ impl ProcessUpdateTask {
         (chat_id, user_id, user)
     }
 
-    async fn start(params: &Params<'_>) -> Result<(), BotError> {
+    async fn start(params: &Params) -> Result<(), BotError> {
         let text = format!(
         "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n
         /pattern ask weather info from city without format\n
@@ -223,7 +228,7 @@ impl ProcessUpdateTask {
         Ok(())
     }
     // What we do if users write /pattern in Initial state.
-    async fn pattern_city(params: &Params<'_>) -> Result<(), BotError> {
+    async fn pattern_city(params: &Params) -> Result<(), BotError> {
         let text = format!(
             "Hi, {}! Write a city , let me see if i find it",
             params.username
@@ -231,20 +236,20 @@ impl ProcessUpdateTask {
         Self::send_message(params, &text).await?;
         Ok(())
     }
-    async fn set_city(params: &Params<'_>) -> Result<(), BotError> {
+    async fn set_city(params: &Params) -> Result<(), BotError> {
         // call pattern_city here
         params
             .repo
-            .modify_state(params.chat_id, params.user_id, ClientState::FindCity)
+            .modify_state(&params.chat_id, params.user_id, ClientState::FindCity)
             .await?;
         params
             .repo
-            .modify_before_state(params.chat_id, params.user_id, ClientState::SetCity)
+            .modify_before_state(&params.chat_id, params.user_id, ClientState::SetCity)
             .await?;
         Ok(())
     }
     // What we do if we are in AskingNumber state and is not a number
-    async fn not_number_message(params: &Params<'_>) -> Result<(), BotError> {
+    async fn not_number_message(params: &Params) -> Result<(), BotError> {
         let text = format!(
             "Hi, {}! That's not a positive number in the range, try again",
             params.username
@@ -253,20 +258,20 @@ impl ProcessUpdateTask {
         Ok(())
     }
 
-    async fn not_default_message(params: &Params<'_>) -> Result<(), BotError> {
+    async fn not_default_message(params: &Params) -> Result<(), BotError> {
         let text = format!("Hi, {}! Setting default city...", params.username);
         Self::send_message(params, &text).await?;
         Ok(())
     }
 
-    async fn city_updated_message(params: &Params<'_>) -> Result<(), BotError> {
+    async fn city_updated_message(params: &Params) -> Result<(), BotError> {
         let text = format!("Hi, {}! Your default city was updated", params.username);
         Self::send_message(params, &text).await?;
         Ok(())
     }
 
     // What we do if users write /cancel in any state
-    async fn cancel(params: &Params<'_>) -> Result<(), BotError> {
+    async fn cancel(params: &Params) -> Result<(), BotError> {
         let text = format!("Hi, {}!\n Your operation was canceled", params.username);
         Self::send_message(params, &text).await?;
 
@@ -275,7 +280,7 @@ impl ProcessUpdateTask {
         Ok(())
     }
 
-    async fn find_city(params: &Params<'_>) -> Result<(), BotError> {
+    async fn find_city(params: &Params) -> Result<(), BotError> {
         let pattern = params.message.text.as_ref().unwrap();
 
         let vec = params.repo.get_city_by_pattern(pattern).await?;
@@ -310,7 +315,7 @@ impl ProcessUpdateTask {
         Ok(())
     }
 
-    async fn pattern_response(params: &Params<'_>) -> Result<(), BotError> {
+    async fn pattern_response(params: &Params) -> Result<(), BotError> {
         let number: usize = params
             .message
             .text
@@ -321,7 +326,7 @@ impl ProcessUpdateTask {
 
         let selected = params
             .repo
-            .get_client_selected(params.chat_id, params.user_id)
+            .get_client_selected(&params.chat_id, params.user_id)
             .await?;
 
         let (name, country, state) = match params.repo.get_city_row(&selected, number).await {
@@ -335,7 +340,7 @@ impl ProcessUpdateTask {
 
         match params
             .repo
-            .get_client_before_state(params.chat_id, params.user_id)
+            .get_client_before_state(&params.chat_id, params.user_id)
             .await?
         {
             ClientState::Initial => {
@@ -360,7 +365,7 @@ impl ProcessUpdateTask {
 
                 params
                     .repo
-                    .modify_city(params.chat_id, params.user_id, record)
+                    .modify_city(&params.chat_id, params.user_id, record)
                     .await?;
 
                 Self::city_updated_message(params).await?;
@@ -373,7 +378,7 @@ impl ProcessUpdateTask {
     }
 
     async fn get_weather(
-        params: &Params<'_>,
+        params: &Params,
         city: &str,
         country: &str,
         state: &str,
@@ -430,7 +435,7 @@ impl ProcessUpdateTask {
         Ok(())
     }
 
-    async fn send_message(params: &Params<'_>, text: &str) -> Result<(), BotError> {
+    async fn send_message(params: &Params, text: &str) -> Result<(), BotError> {
         let send_message_params = SendMessageParams::builder()
             .chat_id(params.message.chat.id)
             .text(text)
@@ -444,7 +449,7 @@ impl ProcessUpdateTask {
     }
 
     // Function to make the bot Typing ...
-    async fn send_typing(params: &Params<'_>) -> Result<(), BotError> {
+    async fn send_typing(params: &Params) -> Result<(), BotError> {
         let send_chat_action_params = SendChatActionParams::builder()
             .chat_id(params.message.chat.id)
             .action(ChatAction::Typing)
