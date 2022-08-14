@@ -55,7 +55,7 @@ impl ProcessUpdateTask {
     }
 
     fn check_command(command: &str, text: &Option<&str>) -> bool {
-        let handle = &format!("/{}@{}", command, BOT_NAME);
+        let handle = &format!("{}@{}", command, BOT_NAME);
         *text == Some(command) || *text == Some(handle)
     }
 
@@ -94,21 +94,23 @@ impl ProcessUpdateTask {
 
             let text = Self::get_text_from_message(message);
 
-            if Self::check_command("cancel", &text) {
+            if Self::check_command("/cancel", &text) {
                 Self::cancel(&params).await?;
                 return Ok(());
             }
 
             match state {
                 ClientState::Initial => {
-                    if Self::check_command("pattern", &text) {
+                    if Self::check_command("/pattern", &text) {
+                        log::info!("Pattern command");
                         Self::pattern_city(&params).await?;
 
                         params
                             .repo
                             .modify_state(&chat_id, user_id, ClientState::FindCity)
                             .await?;
-                    } else if Self::check_command("default", &text) {
+                    } else if Self::check_command("/default", &text) {
+                        log::info!("Default command");
                         match params.repo.get_client_city(&chat_id, user_id).await {
                             Ok(formated) => {
                                 let vec: Vec<&str> = formated.as_str().split(',').collect();
@@ -127,7 +129,8 @@ impl ProcessUpdateTask {
                                 Self::set_city(&params).await?;
                             }
                         }
-                    } else if Self::check_command("start", &text) {
+                    } else if Self::check_command("/start", &text) {
+                        log::info!("Start command");
                         Self::start(&params).await?;
                     }
                 }
