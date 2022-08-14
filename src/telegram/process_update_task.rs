@@ -1,11 +1,12 @@
+use super::client::ApiClient;
 use crate::db::BotDbError;
 use crate::db::ClientState;
 use crate::db::Repo;
 use crate::json_parse::*;
+use crate::open_weather_map::WeatherApiClient;
 use crate::BotError;
 use crate::BINARY_FILE;
 use crate::OPEN_WEATHER_MAP_API_TOKEN;
-use crate::RUST_TELEGRAM_BOT_TOKEN;
 use fang::async_trait;
 use fang::asynk::async_queue::AsyncQueueable;
 use fang::asynk::AsyncError as Error;
@@ -13,13 +14,7 @@ use fang::serde::Deserialize;
 use fang::serde::Serialize;
 use fang::typetag;
 use fang::AsyncRunnable;
-use frankenstein::AsyncApi;
-use frankenstein::AsyncTelegramApi;
-use frankenstein::ChatAction;
 use frankenstein::Message;
-use frankenstein::ParseMode;
-use frankenstein::SendChatActionParams;
-use frankenstein::SendMessageParams;
 use frankenstein::Update;
 use frankenstein::UpdateContent;
 use openssl::pkey::PKey;
@@ -44,8 +39,15 @@ impl ProcessUpdateTask {
     }
 
     fn check_command(command: &str, text: &Option<&str>) -> bool {
-        let handle = &format!("/{}@{}", command, BOT_NAME);
-        *text == Some(command) || *text == Some(handle)
+        let command_with_handle = &format!("/{}@{}", command, BOT_NAME);
+
+        if let None = text {
+            return false;
+        }
+
+        let raw_text = text.unwrap();
+
+        raw_text == command || raw_text == command_with_handle
     }
 
     async fn return_to_initial(repo: &Repo, chat_id: &i64, user_id: u64) -> Result<(), BotError> {
@@ -55,16 +57,17 @@ impl ProcessUpdateTask {
             .await?;
         Ok(())
     }
+
     pub async fn process(&self) -> Result<(), BotError> {
         log::info!("Received a message {:?}", self.update);
 
-        let api = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
+        let api = ApiClient::new();
         let repo = Repo::new().await?;
 
         if let UpdateContent::Message(message) = &self.update.content {
-            let (chat_id, user_id, user) = Self::get_info_from_message(message);
+            api.send_typing(message).await?;
 
-            Self::send_typing(message, &api).await?;
+            let (chat_id, user_id, user) = Self::get_info_from_message(message);
 
             let state = Self::fetch_state(&repo, &chat_id, user_id, user.clone()).await?;
 
@@ -153,7 +156,7 @@ impl ProcessUpdateTask {
         (chat_id, user_id, user)
     }
 
-    async fn start(message: &Message, username: &str, api: &AsyncApi) -> Result<(), BotError> {
+    async fn start(message: &Message, username: &str, api: &ApiClient) -> Result<(), BotError> {
         let text = format!(
         "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n
         /pattern ask weather info from city without format\n
@@ -164,49 +167,50 @@ impl ProcessUpdateTask {
         <a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot </a>",
         username
             );
-        Self::send_message(message, &text, api).await?;
+        api.send_message(message, text).await?;
         Ok(())
     }
     // What we do if users write /pattern in Initial state.
     async fn pattern_city(
         message: &Message,
         username: &str,
-        api: &AsyncApi,
+        api: &ApiClient,
     ) -> Result<(), BotError> {
         let text = format!("Hi, {}! Write a city , let me see if i find it", username);
-        Self::send_message(message, &text, api).await?;
+        api.send_message(message, text).await?;
         Ok(())
     }
     // What we do if we are in AskingNumber state and is not a number
     async fn not_number_message(
         message: &Message,
         username: &str,
-        api: &AsyncApi,
+        api: &ApiClient,
     ) -> Result<(), BotError> {
         let text = format!(
             "Hi, {}! That's not a positive number in the range, try again",
             username
         );
-        Self::send_message(message, &text, api).await?;
+        api.send_message(message, text).await?;
         Ok(())
     }
 
     async fn city_updated_message(
         message: &Message,
         username: &str,
-        api: &AsyncApi,
+        api: &ApiClient,
     ) -> Result<(), BotError> {
         let text = format!("Hi, {}! Your default city was updated", username);
-        Self::send_message(message, &text, api).await?;
+
+        api.send_message(message, text).await?;
         Ok(())
     }
 
     // What we do if users write /cancel in any state
-    async fn cancel(repo: &Repo, message: &Message, api: &AsyncApi) -> Result<(), BotError> {
+    async fn cancel(repo: &Repo, message: &Message, api: &ApiClient) -> Result<(), BotError> {
         let (chat_id, user_id, username) = Self::get_info_from_message(message);
 
         let text = format!("Hi, {}!\n Your operation was canceled", username);
-        Self::send_message(message, &text, api).await?;
+        api.send_message(message, text).await?;
 
         Self::return_to_initial(repo, &chat_id, user_id).await?;
 
@@ -217,7 +221,7 @@ impl ProcessUpdateTask {
         repo: &Repo,
         username: &str,
         message: &Message,
-        api: &AsyncApi,
+        api: &ApiClient,
     ) -> Result<(), BotError> {
         let pattern = message.text.as_ref().unwrap();
 
@@ -228,7 +232,7 @@ impl ProcessUpdateTask {
                 "Hi, {}! Your city {} was not found , try again",
                 username, pattern,
             );
-            Self::send_message(message, &text, api).await?;
+            api.send_message(message, text).await?;
             return Err(BotError::DbError(BotDbError::CityNotFoundError));
         }
 
@@ -248,7 +252,7 @@ impl ProcessUpdateTask {
             }
             i += 1;
         }
-        Self::send_message(message, &text, api).await?;
+        api.send_message(message, text).await?;
 
         Ok(())
     }
@@ -256,7 +260,7 @@ impl ProcessUpdateTask {
     async fn pattern_response(
         repo: &Repo,
         message: &Message,
-        api: &AsyncApi,
+        api: &ApiClient,
     ) -> Result<(), BotError> {
         let (chat_id, user_id, username) = Self::get_info_from_message(message);
 
@@ -312,7 +316,7 @@ impl ProcessUpdateTask {
     async fn get_weather(
         repo: &Repo,
         message: &Message,
-        api: &AsyncApi,
+        api: &ApiClient,
         city: &str,
         country: &str,
         state: &str,
@@ -336,7 +340,7 @@ impl ProcessUpdateTask {
                         username,
                         message.text.as_ref().unwrap()
                     );
-                    Self::send_message(message, &text, api).await?;
+                    api.send_message(message, text).await?;
 
                     return Ok(());
                 }
@@ -367,30 +371,7 @@ impl ProcessUpdateTask {
             ),
             _ => panic!("wtf is this ?"),
         };
-        Self::send_message(message, &text, api).await?;
-        Ok(())
-    }
-
-    async fn send_message(message: &Message, text: &str, api: &AsyncApi) -> Result<(), BotError> {
-        let send_message_params = SendMessageParams::builder()
-            .chat_id(message.chat.id)
-            .text(text)
-            .reply_to_message_id(message.message_id)
-            .parse_mode(ParseMode::Html)
-            .build();
-
-        api.send_message(&send_message_params).await?;
-
-        Ok(())
-    }
-
-    // Function to make the bot Typing ...
-    async fn send_typing(message: &Message, api: &AsyncApi) -> Result<(), BotError> {
-        let send_chat_action_params = SendChatActionParams::builder()
-            .chat_id(message.chat.id)
-            .action(ChatAction::Typing)
-            .build();
-        api.send_chat_action(&send_chat_action_params).await?;
+        api.send_message(message, text).await?;
         Ok(())
     }
 }
@@ -399,7 +380,9 @@ impl ProcessUpdateTask {
 #[async_trait]
 impl AsyncRunnable for ProcessUpdateTask {
     async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), Error> {
-        self.process().await.unwrap();
+        if let Err(err) = self.process().await {
+            log::error!("Failed to process a message for {:?} -  {:?}", self, err);
+        }
 
         Ok(())
     }
