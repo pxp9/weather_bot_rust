@@ -11,7 +11,6 @@ use frankenstein::UpdateContent;
 use openssl::pkey::PKey;
 use openssl::pkey::Private;
 use openssl::rsa::Rsa;
-use tokio::runtime;
 use weather_bot_rust::db::ClientState;
 use weather_bot_rust::db::Repo;
 use weather_bot_rust::json_parse::*;
@@ -140,18 +139,6 @@ async fn main() {
     let mut handler = Handler::new().await;
 
     handler.start().await;
-
-    // let rt = runtime::Builder::new_multi_thread()
-    //     .worker_threads(6)
-    //     .thread_name("my thread")
-    //     .enable_io()
-    //     .enable_time()
-    //     .build()
-    //     .unwrap();
-    // // Execution of code
-    // rt.block_on(async {
-    //     bot_main().await.unwrap();
-    // });
 }
 
 async fn bot_main() -> Result<(), BotError> {
@@ -222,7 +209,7 @@ async fn bot_main() -> Result<(), BotError> {
 // Function to make the bot Typing ...
 async fn send_typing(message: &Message, api: &AsyncApi) -> Result<(), BotError> {
     let send_chat_action_params = SendChatActionParams::builder()
-        .chat_id((*((*message).chat)).id)
+        .chat_id((*message).chat.id)
         .action(ChatAction::Typing)
         .build();
     api.send_chat_action(&send_chat_action_params).await?;
