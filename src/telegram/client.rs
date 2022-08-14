@@ -2,7 +2,14 @@ use crate::RUST_TELEGRAM_BOT_TOKEN;
 use frankenstein::AllowedUpdate;
 use frankenstein::AsyncApi;
 use frankenstein::AsyncTelegramApi;
+use frankenstein::ChatAction;
+use frankenstein::Error;
 use frankenstein::GetUpdatesParams;
+use frankenstein::Message;
+use frankenstein::MethodResponse;
+use frankenstein::ParseMode;
+use frankenstein::SendChatActionParams;
+use frankenstein::SendMessageParams;
 use frankenstein::Update;
 use std::collections::VecDeque;
 
@@ -58,5 +65,33 @@ impl ApiClient {
                 None
             }
         }
+    }
+
+    pub async fn send_typing(&self, message: &Message) -> Result<MethodResponse<bool>, Error> {
+        let send_chat_action_params = SendChatActionParams::builder()
+            .chat_id(message.chat.id)
+            .action(ChatAction::Typing)
+            .build();
+
+        self.telegram_client
+            .send_chat_action(&send_chat_action_params)
+            .await
+    }
+
+    pub async fn send_message(
+        &self,
+        message: &Message,
+        text: String,
+    ) -> Result<MethodResponse<Message>, Error> {
+        let send_message_params = SendMessageParams::builder()
+            .chat_id(message.chat.id)
+            .text(text)
+            .reply_to_message_id(message.message_id)
+            .parse_mode(ParseMode::Html)
+            .build();
+
+        self.telegram_client
+            .send_message(&send_message_params)
+            .await
     }
 }

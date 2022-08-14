@@ -1,9 +1,13 @@
 pub mod db;
 pub mod json_parse;
+pub mod open_weather_map;
 pub mod telegram;
 pub mod workers;
 
+use crate::db::BotDbError;
 use lazy_static::lazy_static;
+use thiserror::Error;
+
 lazy_static! {
     pub static ref RUST_TELEGRAM_BOT_TOKEN: String =
         std::env::var("RUST_TELEGRAM_BOT_TOKEN").expect("RUST_TELEGRAM_BOT_TOKEN not set");
@@ -15,8 +19,6 @@ lazy_static! {
         std::fs::read("./resources/key.pem").expect("resources/key.pem not set");
 }
 
-use crate::db::BotDbError;
-use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum BotError {
     #[error(transparent)]
