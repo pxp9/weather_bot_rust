@@ -19,5 +19,4 @@ lazy_static = "1.4.0"
 log = "0.4"
 pretty_env_logger = "0.4"
 fang = { version = "0.7" , features = ["asynk"], default-features = false }
-async-trait = "0.1"
 typed-builder = "0.10"
