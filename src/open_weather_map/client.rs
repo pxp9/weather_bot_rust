@@ -8,8 +8,8 @@ const LANG: &str = "en";
 
 #[derive(TypedBuilder)]
 pub struct WeatherApiClient {
-    lat: i32,
-    lon: i32,
+    lat: f64,
+    lon: f64,
 }
 
 #[derive(Debug, Error)]

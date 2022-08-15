@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use typed_builder::TypedBuilder;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Weather {
@@ -16,13 +17,13 @@ pub struct Weather {
     pub code: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TypedBuilder)]
 pub struct Coord {
     pub lon: f64,
     pub lat: f64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, TypedBuilder)]
 pub struct City {
     pub name: String,
     pub state: String,

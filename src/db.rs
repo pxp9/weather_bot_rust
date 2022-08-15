@@ -1,17 +1,20 @@
+use crate::open_weather_map::City;
+use crate::open_weather_map::Coord;
 use crate::DATABASE_URL;
 use bb8_postgres::bb8::Pool;
 use bb8_postgres::bb8::RunError;
 use bb8_postgres::tokio_postgres::tls::NoTls;
 use bb8_postgres::tokio_postgres::Row;
 use bb8_postgres::PostgresConnectionManager;
-#[cfg(test)]
-use openssl::encrypt::Decrypter;
 use openssl::encrypt::Encrypter;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Padding;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
 use thiserror::Error;
+
+#[cfg(test)]
+use openssl::encrypt::Decrypter;
 
 #[derive(Debug, Error)]
 pub enum BotDbError {
@@ -107,20 +110,14 @@ impl Repo {
         name: &str,
         country: &str,
         state: &str,
-    ) -> Result<(f64, f64, String, String, String), BotDbError> {
+    ) -> Result<City, BotDbError> {
         let connection = self.pool.get().await?;
 
         let vec: Vec<Row> = connection
             .query(SEARCH_CITY, &[&name, &country, &state])
             .await?;
         if vec.len() == 1 {
-            Ok((
-                vec[0].get("lon"),
-                vec[0].get("lat"),
-                vec[0].get("name"),
-                vec[0].get("country"),
-                vec[0].get("state"),
-            ))
+            Ok(Self::record_to_city(&vec[0]))
         } else {
             Err(BotDbError::CityNotFoundError)
         }
@@ -151,6 +148,7 @@ impl Repo {
 
         Ok(row.get("before_state"))
     }
+
     pub async fn get_client_state(
         &self,
         chat_id: &i64,
@@ -172,6 +170,7 @@ impl Repo {
 
         Ok(row)
     }
+
     pub async fn insert_client(
         &self,
         chat_id: &i64,
@@ -198,6 +197,7 @@ impl Repo {
             .await?;
         Ok(n)
     }
+
     pub async fn delete_client(&self, chat_id: &i64, user_id: u64) -> Result<u64, BotDbError> {
         let connection = self.pool.get().await?;
 
@@ -208,6 +208,7 @@ impl Repo {
             .await?;
         Ok(n)
     }
+
     pub async fn modify_state(
         &self,
         chat_id: &i64,
@@ -257,6 +258,7 @@ impl Repo {
 
         Ok(n)
     }
+
     pub async fn modify_selected(
         &self,
         chat_id: &i64,
@@ -282,20 +284,28 @@ impl Repo {
         let vec = connection.query(GET_CITY_BY_PATTERN, &[&st]).await?;
         Ok(vec)
     }
-    pub async fn get_city_row(
-        &self,
-        city: &str,
-        n: usize,
-    ) -> Result<(String, String, String), BotDbError> {
+
+    pub async fn get_city_row(&self, city: &str, n: usize) -> Result<City, BotDbError> {
         let vec: Vec<Row> = self.get_city_by_pattern(city).await?;
         if n > vec.len() {
             return Err(BotDbError::CityNotFoundError);
         }
-        Ok((
-            vec[n - 1].get("name"),
-            vec[n - 1].get("country"),
-            vec[n - 1].get("state"),
-        ))
+
+        Ok(Self::record_to_city(&vec[n - 1]))
+    }
+
+    pub fn record_to_city(record: &Row) -> City {
+        let coord = Coord::builder()
+            .lon(record.get("lot"))
+            .lat(record.get("lat"))
+            .build();
+
+        City::builder()
+            .name(record.get("name"))
+            .country(record.get("country"))
+            .state(record.get("state"))
+            .coord(coord)
+            .build()
     }
 }
 #[cfg(test)]
