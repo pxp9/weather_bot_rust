@@ -4,6 +4,18 @@
 
 CREATE TYPE client_state AS ENUM ('initial', 'set_city', 'find_city' , 'number');
 
+
+CREATE TABLE cities (
+  id SERIAL,
+  name VARCHAR(80) NOT NULL,
+  country VARCHAR(80) NOT NULL,
+  state VARCHAR(80) NOT NULL,
+  lon DOUBLE PRECISION NOT NULL,
+  lat DOUBLE PRECISION NOT NULL,
+  UNIQUE(name, country, state),
+  PRIMARY KEY (id)
+);
+
 CREATE TABLE chats (
   id BIGINT,
   user_id BYTEA, 
@@ -17,13 +29,3 @@ CREATE TABLE chats (
   REFERENCES cities(id)
 );
 
-CREATE TABLE cities (
-  id SERIAL,
-  name VARCHAR(80) NOT NULL,
-  country VARCHAR(80) NOT NULL,
-  state VARCHAR(80) NOT NULL,
-  lon DOUBLE PRECISION NOT NULL,
-  lat DOUBLE PRECISION NOT NULL,
-  UNIQUE(name, country, state),
-  PRIMARY KEY id
-);
