@@ -1,3 +1,4 @@
+<p align="center"><img src="logo.png" alt="logo" height="300px"></p>
 
 ## MIT
 ### The MIT License
@@ -91,7 +92,7 @@ $ cargo run
 
 ## Stop Docker
 ```
-$ make stop 
+$ make stop
 ```
 
 ## 3rd Party Documentations
@@ -108,4 +109,3 @@ $ make stop
 
 The bot will send a daily message of weather info if user activate the option
 -->
-
