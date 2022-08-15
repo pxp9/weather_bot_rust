@@ -2,10 +2,10 @@ use super::client::ApiClient;
 use crate::db::BotDbError;
 use crate::db::ClientState;
 use crate::db::Repo;
-use crate::json_parse::*;
+use crate::open_weather_map::client::WeatherApiClient;
+use crate::open_weather_map::City;
 use crate::BotError;
 use crate::BINARY_FILE;
-use crate::OPEN_WEATHER_MAP_API_TOKEN;
 use fang::async_trait;
 use fang::asynk::async_queue::AsyncQueueable;
 use fang::asynk::AsyncError as Error;
@@ -22,6 +22,7 @@ use std::fmt::Write;
 use typed_builder::TypedBuilder;
 
 const BOT_NAME: &str = "RustWeather77Bot";
+const ERROR_MESSAGE_FOR_USER: &str = "Failed to fullfill the request";
 
 #[derive(TypedBuilder)]
 pub struct Params {
@@ -110,14 +111,16 @@ impl ProcessUpdateTask {
                             Ok(formated) => {
                                 let vec: Vec<&str> = formated.as_str().split(',').collect();
                                 let n = vec.len();
-                                let city = vec[0];
+                                let city_name = vec[0];
                                 let country = vec[1];
                                 let mut state = "";
                                 if n == 3 {
                                     state = vec[2];
                                 }
-                                // Not deleted yet, because i get warnings if i delete get_weather
-                                Self::get_weather(&params, city, country, state, n).await?
+
+                                let city =
+                                    params.repo.search_city(city_name, country, state).await?;
+                                Self::get_weather(&params, city).await?
                             }
                             Err(_) => {
                                 Self::not_default_message(&params).await?;
@@ -234,6 +237,7 @@ impl ProcessUpdateTask {
         Self::send_message(params, text).await?;
         Ok(())
     }
+
     async fn set_city(params: &Params) -> Result<(), BotError> {
         // call pattern_city here
         params
@@ -327,13 +331,12 @@ impl ProcessUpdateTask {
             .get_client_selected(&params.chat_id, params.user_id)
             .await?;
 
-        let (name, country, state) = match params.repo.get_city_row(&selected, number).await {
-            Ok((n, c, s)) => (n, c, s),
-            Err(_) => (String::new(), String::new(), String::new()),
-        };
-        let n: usize = match state.as_str() {
-            "" => 2,
-            _ => 3,
+        let city = match params.repo.get_city_row(&selected, number).await {
+            Ok(city) => city,
+            Err(error) => {
+                log::error!("failed to get city {:?}", error);
+                return Self::error_message(params).await;
+            }
         };
 
         match params
@@ -341,24 +344,13 @@ impl ProcessUpdateTask {
             .get_client_before_state(&params.chat_id, params.user_id)
             .await?
         {
-            ClientState::Initial => {
-                Ok(
-                    Self::get_weather(params, name.as_str(), country.as_str(), state.as_str(), n)
-                        .await?,
-                )
-            }
+            ClientState::Initial => Ok(Self::get_weather(params, city).await?),
 
             ClientState::SetCity => {
-                let record = match n {
-                    2 => {
-                        format!("{},{}", name, country)
-                    }
-                    3 => {
-                        format!("{},{},{}", name, country, state)
-                    }
-                    _ => {
-                        panic!("wtf is this number")
-                    }
+                let record = if city.state.is_empty() {
+                    format!("{},{}", city.name, city.country)
+                } else {
+                    format!("{},{},{}", city.name, city.country, city.state)
                 };
 
                 params
@@ -375,66 +367,30 @@ impl ProcessUpdateTask {
         }
     }
 
-    async fn get_weather(
-        params: &Params,
-        city: &str,
-        country: &str,
-        state: &str,
-        n: usize,
-    ) -> Result<(), BotError> {
-        let (lon, lat, city_fmt, country_fmt, state_fmt) =
-            match params.repo.search_city(city, country, state).await {
-                Ok((lon, lat, city_fmt, country_fmt, state_fmt)) => {
-                    (lon, lat, city_fmt, country_fmt, state_fmt)
-                }
-                Err(_) => {
-                    println!(
-                        "User {} ,  City {} not found",
-                        params.username,
-                        params.message.text.as_ref().unwrap()
-                    );
-                    let text = format!(
-                        "Hi, {}! Your city {} was not found",
-                        params.username,
-                        params.message.text.as_ref().unwrap()
-                    );
-                    Self::send_message(params, text).await?;
+    async fn get_weather(params: &Params, city: City) -> Result<(), BotError> {
+        let weather_client = WeatherApiClient::builder()
+            .lat(city.coord.lat)
+            .lon(city.coord.lon)
+            .build();
 
-                    return Ok(());
-                }
-            };
+        let weather_info = weather_client.fetch().await?;
 
-        // spanish sp and english en
-        // units metric or imperial
-        let opwm_token: &str = &OPEN_WEATHER_MAP_API_TOKEN;
-        let request_url = format!(
-        "https://api.openweathermap.org/data/2.5/weather?lat={}&lon={}&appid={}&units={}&lang={}",
-        lat, lon, opwm_token, "metric", "sp",
+        let text = format!(
+            "Hi {},\n{},{}\nLon {} , Lat {}\n{:?}",
+            params.username, city.name, city.country, city.coord.lon, city.coord.lat, weather_info,
         );
-
-        let response = reqwest::get(&request_url).unwrap().text().unwrap();
-        let weather_info = parse_weather(response).await.unwrap();
-        println!(
-            "User {} ,  City {} , Country {}\nLon {} , Lat {} {}",
-            params.username, city_fmt, country_fmt, lon, lat, weather_info
-        );
-        let text = match n {
-            2 => format!(
-                "Hi {},\n{},{}\nLon {} , Lat {}\n{}",
-                params.username, city_fmt, country_fmt, lon, lat, weather_info,
-            ),
-            3 => format!(
-                "Hi {},\n{},{},{}\nLon {}  Lat {}\n{}",
-                params.username, city_fmt, country_fmt, state_fmt, lon, lat, weather_info,
-            ),
-            _ => panic!("wtf is this ?"),
-        };
         Self::send_message(params, text).await?;
         Ok(())
     }
 
     async fn send_message(params: &Params, text: String) -> Result<(), BotError> {
         params.api.send_message(&params.message, text).await?;
+
+        Ok(())
+    }
+
+    async fn error_message(params: &Params) -> Result<(), BotError> {
+        Self::send_message(params, ERROR_MESSAGE_FOR_USER.to_string()).await?;
 
         Ok(())
     }

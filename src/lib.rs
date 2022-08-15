@@ -5,6 +5,7 @@ pub mod telegram;
 pub mod workers;
 
 use crate::db::BotDbError;
+use crate::open_weather_map::client::ClientError;
 use lazy_static::lazy_static;
 use thiserror::Error;
 
@@ -27,4 +28,6 @@ pub enum BotError {
     TelegramError(#[from] frankenstein::Error),
     #[error(transparent)]
     DbError(#[from] BotDbError),
+    #[error(transparent)]
+    WeatherApiError(#[from] ClientError),
 }
