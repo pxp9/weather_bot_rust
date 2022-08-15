@@ -20,7 +20,10 @@ pub struct Weather {
 
 impl fmt::Display for Weather {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let weather_desc = &self.weather[0].description;
+        let mut weather_desc: &str = "";
+        if !self.weather.is_empty() {
+            weather_desc = &self.weather[0].description;
+        }
         let temp = self.main.temp;
         let temp_min = self.main.temp_min;
         let temp_max = self.main.temp_max;
@@ -45,14 +48,6 @@ pub struct Coord {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, TypedBuilder)]
 pub struct City {
     pub id: i32,
-    pub name: String,
-    pub state: String,
-    pub country: String,
-    pub coord: Coord,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct CityDeserialize {
     pub name: String,
     pub state: String,
     pub country: String,

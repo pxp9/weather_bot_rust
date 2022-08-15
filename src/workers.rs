@@ -16,7 +16,7 @@ pub async fn start_workers() {
     queue.connect(NoTls).await.unwrap();
 
     let params = SleepParams {
-        sleep_period: 0,
+        sleep_period: 1,
         max_sleep_period: 1,
         min_sleep_period: 0,
         sleep_step: 1,

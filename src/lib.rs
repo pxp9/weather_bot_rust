@@ -1,6 +1,6 @@
 pub mod db;
-pub mod json_parse;
 pub mod open_weather_map;
+pub mod seeds;
 pub mod telegram;
 pub mod workers;
 
