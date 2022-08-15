@@ -20,7 +20,7 @@ pub async fn insert_seeds() -> Result<(), BotDbError> {
 
     if n == 0 {
         // read json as file
-        let content = fs::read_to_string("resources/city.list.json").unwrap();
+        let content = fs::read_to_string("city.list.json").unwrap();
 
         // Deserialize json with struct City defined open_weather_map::weather
         let cities = serde_json::from_str::<Vec<SeedCity>>(&content).unwrap();
