@@ -25,6 +25,7 @@ pub struct Coord {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, TypedBuilder)]
 pub struct City {
+    pub id: i32,
     pub name: String,
     pub state: String,
     pub country: String,
