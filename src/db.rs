@@ -287,8 +287,6 @@ impl Repo {
 mod db_test {
     use crate::db::*;
     use bb8_postgres::tokio_postgres::Row;
-    use openssl::pkey::PKey;
-    use openssl::rsa::Rsa;
 
     #[tokio::test]
     async fn test_modify_state() {
