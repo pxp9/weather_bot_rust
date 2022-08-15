@@ -299,7 +299,7 @@ mod db_test {
         assert_eq!(n, 1_u64);
 
         let row: &Row = &connection
-            .query_one("SELECT * FROM chat LIMIT 1", &[])
+            .query_one("SELECT * FROM chats LIMIT 1", &[])
             .await
             .unwrap();
 
