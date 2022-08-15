@@ -270,7 +270,7 @@ impl Repo {
 
     pub fn record_to_city(record: &Row) -> City {
         let coord = Coord::builder()
-            .lon(record.get("lot"))
+            .lon(record.get("lon"))
             .lat(record.get("lat"))
             .build();
 
