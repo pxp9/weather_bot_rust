@@ -30,7 +30,7 @@ pub async fn read_json_cities() -> Result<(), BotDbError> {
                 .await?;
             if n == 0 {
                 connection.execute("INSERT INTO cities (name , country , state , lon , lat ) VALUES ($1 , $2 , $3 , $4 , $5)"
-                    , &[&city.name, &city.country,&city.state , &city.coords.lon, &city.coords.lat]).await?;
+                    , &[&city.name, &city.country,&city.state , &city.coord.lon, &city.coord.lat]).await?;
             }
         }
     }

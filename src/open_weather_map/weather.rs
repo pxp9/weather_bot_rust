@@ -27,7 +27,7 @@ pub struct City {
     pub name: String,
     pub state: String,
     pub country: String,
-    pub coords: Coord,
+    pub coord: Coord,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
