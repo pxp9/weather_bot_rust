@@ -294,8 +294,6 @@ mod db_test {
         let db_controller = Repo::new().await.unwrap();
         let connection = db_controller.pool.get().await.unwrap();
 
-        let binary_file = std::fs::read("./resources/key.pem").unwrap();
-
         let n = db_controller.insert_client(&111111, 1111111).await.unwrap();
 
         assert_eq!(n, 1_u64);
