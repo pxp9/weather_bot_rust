@@ -1,4 +1,3 @@
-use bb8_postgres::tokio_postgres::NoTls;
 use frankenstein::api_params::ChatAction;
 use frankenstein::api_params::SendChatActionParams;
 use frankenstein::AsyncApi;
@@ -13,7 +12,7 @@ use openssl::pkey::Private;
 use openssl::rsa::Rsa;
 use weather_bot_rust::db::ClientState;
 use weather_bot_rust::db::Repo;
-use weather_bot_rust::json_parse::*;
+use weather_bot_rust::json_parse;
 use weather_bot_rust::telegram::handler::Handler;
 use weather_bot_rust::workers;
 use weather_bot_rust::{
@@ -79,7 +78,7 @@ async fn get_weather(
         lat, lon, conf.opwm_token, "metric", "sp",
     );
     let response = reqwest::get(&request_url).unwrap().text().unwrap();
-    let weather_info = parse_weather(response).await.unwrap();
+    let weather_info = json_parse::parse_weather(response).await.unwrap();
     println!(
         "User {} ,  City {} , Country {}\nLon {} , Lat {} {}",
         conf.username, city_fmt, country_fmt, lon, lat, weather_info
@@ -134,6 +133,8 @@ struct ProcessMessage<'a> {
 async fn main() {
     pretty_env_logger::init();
 
+    json_parse::read_json_cities().await.unwrap();
+
     workers::start_workers().await;
 
     let mut handler = Handler::new().await;
@@ -147,28 +148,7 @@ async fn bot_main() -> Result<(), BotError> {
     let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
     let keypair = PKey::from_rsa(keypair).unwrap();
     let me = api.get_me().await?.result.username.unwrap();
-    // Cities are in database ?
-    // See if we have the cities in db
-    let (mut client, connection) = bb8_postgres::tokio_postgres::connect(
-        "host=localhost dbname=weather_bot user=postgres",
-        NoTls,
-    )
-    .await
-    .unwrap();
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("connection error: {}", e);
-        }
-    });
-    let mut transaction = client.transaction().await.unwrap();
-    let n = transaction
-        .execute("SELECT * FROM cities", &[])
-        .await
-        .unwrap();
-    if n == 0 {
-        read_json_cities(&mut transaction).await.unwrap();
-        transaction.commit().await.unwrap();
-    }
+
     // Fetch new updates via long poll method
     let update_params_builder = GetUpdatesParams::builder();
     let mut update_params = update_params_builder.clone().build();

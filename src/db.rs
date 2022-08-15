@@ -29,7 +29,7 @@ pub enum BotDbError {
 
 #[derive(Debug, Clone)]
 pub struct Repo {
-    pool: Pool<PostgresConnectionManager<NoTls>>,
+    pub pool: Pool<PostgresConnectionManager<NoTls>>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, ToSql, FromSql)]

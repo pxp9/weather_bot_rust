@@ -2612,7 +2612,6 @@ checksum = "6598dd0bd3c7d51095ff6531a5b23e02acdc81804e30d8f07afb77b7215a140a"
 name = "weather_bot_rust"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bb8-postgres 0.7.0",
  "fang",
  "frankenstein",

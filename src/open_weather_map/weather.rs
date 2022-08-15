@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Weather {
     pub coord: Coord,
     pub weather: Vec<Coord>,
@@ -16,10 +16,18 @@ pub struct Weather {
     pub code: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Coord {
-    pub lon: i64,
-    pub lat: i64,
+    pub lon: f64,
+    pub lat: f64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct City {
+    pub name: String,
+    pub state: String,
+    pub country: String,
+    pub coords: Coord,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
