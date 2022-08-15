@@ -6,15 +6,9 @@ use bb8_postgres::bb8::RunError;
 use bb8_postgres::tokio_postgres::tls::NoTls;
 use bb8_postgres::tokio_postgres::Row;
 use bb8_postgres::PostgresConnectionManager;
-use openssl::encrypt::Encrypter;
-use openssl::pkey::{PKey, Private};
-use openssl::rsa::Padding;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
 use thiserror::Error;
-
-#[cfg(test)]
-use openssl::encrypt::Decrypter;
 
 #[derive(Debug, Error)]
 pub enum BotDbError {
@@ -22,10 +16,6 @@ pub enum BotDbError {
     PoolError(#[from] RunError<bb8_postgres::tokio_postgres::Error>),
     #[error(transparent)]
     PgError(#[from] bb8_postgres::tokio_postgres::Error),
-    #[error(transparent)]
-    EncryptError(#[from] openssl::error::ErrorStack),
-    #[error(transparent)]
-    StringError(#[from] std::string::FromUtf8Error),
     #[error("City not found")]
     CityNotFoundError,
 }
@@ -57,6 +47,7 @@ const MODIFY_BEFORE_STATE: &str = include_str!("queries/modify_before_state.sql"
 const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
 const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
+const SEARCH_CITY_BY_ID: &str = include_str!("queries/search_city_by_id.sql");
 const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
 
 impl Repo {
@@ -69,30 +60,6 @@ impl Repo {
     pub async fn new() -> Result<Self, BotDbError> {
         let pl = Self::pool(&DATABASE_URL).await?;
         Ok(Repo { pool: pl })
-    }
-
-    // Encrypt a String into a BYTEA
-    fn encrypt_string(some_string: String, keypair: &PKey<Private>) -> Result<Vec<u8>, BotDbError> {
-        let mut encrypter = Encrypter::new(keypair)?;
-        encrypter.set_rsa_padding(Padding::PKCS1)?;
-        let st_bytes = some_string.as_bytes();
-        let len: usize = encrypter.encrypt_len(st_bytes)?;
-        let mut encrypted = vec![0; len];
-        let encrypted_len = encrypter.encrypt(st_bytes, &mut encrypted)?;
-        encrypted.truncate(encrypted_len);
-        Ok(encrypted)
-    }
-
-    // Decrypt a BYTEA into a String
-    #[cfg(test)]
-    fn decrypt_string(encrypted: &[u8], keypair: &PKey<Private>) -> Result<String, BotDbError> {
-        let mut decrypter = Decrypter::new(keypair)?;
-        decrypter.set_rsa_padding(Padding::PKCS1)?;
-        let buffer_len = decrypter.decrypt_len(encrypted)?;
-        let mut decrypted = vec![0; buffer_len];
-        let decrypted_len = decrypter.decrypt(encrypted, &mut decrypted)?;
-        decrypted.truncate(decrypted_len);
-        Ok(String::from_utf8(decrypted)?)
     }
 
     pub async fn check_user_exists(&self, chat_id: &i64, user_id: u64) -> Result<bool, BotDbError> {
@@ -123,6 +90,17 @@ impl Repo {
         }
     }
 
+    pub async fn search_city_by_id(&self, id: &i32) -> Result<City, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let vec: Vec<Row> = connection.query(SEARCH_CITY_BY_ID, &[id]).await?;
+        if vec.len() == 1 {
+            Ok(Self::record_to_city(&vec[0]))
+        } else {
+            Err(BotDbError::CityNotFoundError)
+        }
+    }
+
     pub async fn get_client_selected(
         &self,
         chat_id: &i64,
@@ -133,10 +111,14 @@ impl Repo {
         Ok(row.get("selected"))
     }
 
-    pub async fn get_client_city(&self, chat_id: &i64, user_id: u64) -> Result<String, BotDbError> {
+    pub async fn get_client_default_city_id(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<i32, BotDbError> {
         let row: &Row = &self.search_client(chat_id, user_id).await?;
 
-        Ok(row.try_get("city")?)
+        Ok(row.try_get("default_city_id")?)
     }
 
     pub async fn get_client_before_state(
@@ -171,24 +153,16 @@ impl Repo {
         Ok(row)
     }
 
-    pub async fn insert_client(
-        &self,
-        chat_id: &i64,
-        user_id: u64,
-        user: String,
-        keypair: &PKey<Private>,
-    ) -> Result<u64, BotDbError> {
+    pub async fn insert_client(&self, chat_id: &i64, user_id: u64) -> Result<u64, BotDbError> {
         let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
-        let user_encrypted = Self::encrypt_string(user, keypair)?;
 
         let n = connection
             .execute(
                 INSERT_CLIENT,
                 &[
                     chat_id,
-                    &user_encrypted,
                     &ClientState::Initial,
                     &ClientState::Initial,
                     &bytes,
@@ -242,18 +216,18 @@ impl Repo {
         Ok(n)
     }
 
-    pub async fn modify_city(
+    pub async fn modify_default_city(
         &self,
         chat_id: &i64,
         user_id: u64,
-        new_city: String,
+        city_id: &i32,
     ) -> Result<u64, BotDbError> {
         let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
         let n = connection
-            .execute(MODIFY_CITY, &[&new_city, chat_id, &bytes])
+            .execute(MODIFY_CITY, &[&city_id, chat_id, &bytes])
             .await?;
 
         Ok(n)
@@ -276,10 +250,10 @@ impl Repo {
         Ok(n)
     }
 
-    pub async fn get_city_by_pattern(&self, city: &str) -> Result<Vec<Row>, BotDbError> {
+    pub async fn get_city_by_pattern(&self, pattern: &str) -> Result<Vec<Row>, BotDbError> {
         let connection = self.pool.get().await?;
 
-        let st = format!("%{}%", city.to_uppercase());
+        let st = format!("%{}%", pattern.to_uppercase());
 
         let vec = connection.query(GET_CITY_BY_PATTERN, &[&st]).await?;
         Ok(vec)
@@ -301,6 +275,7 @@ impl Repo {
             .build();
 
         City::builder()
+            .id(record.get("id"))
             .name(record.get("name"))
             .country(record.get("country"))
             .state(record.get("state"))
@@ -312,8 +287,6 @@ impl Repo {
 mod db_test {
     use crate::db::*;
     use bb8_postgres::tokio_postgres::Row;
-    use openssl::pkey::PKey;
-    use openssl::rsa::Rsa;
 
     #[tokio::test]
     async fn test_modify_state() {
@@ -321,19 +294,12 @@ mod db_test {
         let db_controller = Repo::new().await.unwrap();
         let connection = db_controller.pool.get().await.unwrap();
 
-        let binary_file = std::fs::read("./resources/key.pem").unwrap();
-        let keypair = Rsa::private_key_from_pem(&binary_file).unwrap();
-        let keypair = PKey::from_rsa(keypair).unwrap();
-
-        let n = db_controller
-            .insert_client(&111111, 1111111, String::from("@ItzPXP9"), &keypair)
-            .await
-            .unwrap();
+        let n = db_controller.insert_client(&111111, 1111111).await.unwrap();
 
         assert_eq!(n, 1_u64);
 
         let row: &Row = &connection
-            .query_one("SELECT * FROM chat LIMIT 1", &[])
+            .query_one("SELECT * FROM chats LIMIT 1", &[])
             .await
             .unwrap();
 
@@ -344,8 +310,6 @@ mod db_test {
         arr.copy_from_slice(bytes);
         let user_id = as_u64_le(&arr);
 
-        let user: String = Repo::decrypt_string(row.get("user"), &keypair).unwrap();
-        assert_eq!(user, String::from("@ItzPXP9"));
         // testing modify state
 
         let n = db_controller

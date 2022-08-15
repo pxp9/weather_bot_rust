@@ -1,1 +1,1 @@
-DELETE FROM chat WHERE id = $1 AND user_id = $2
+DELETE FROM chats WHERE id = $1 AND user_id = $2

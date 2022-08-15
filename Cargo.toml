@@ -11,7 +11,6 @@ postgres-types = { version = "0.X.X", features = ["derive"] }
 serde_json = "1.0"
 reqwest = "0.9"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
-openssl = "0.10"
 serde = "1"
 bb8-postgres = "0.7.0"
 thiserror = "1.0"

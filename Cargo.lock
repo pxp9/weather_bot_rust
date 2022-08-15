@@ -2617,7 +2617,6 @@ dependencies = [
  "frankenstein",
  "lazy_static",
  "log",
- "openssl",
  "postgres-types",
  "pretty_env_logger",
  "reqwest 0.9.24",

@@ -5,7 +5,6 @@ use crate::db::Repo;
 use crate::open_weather_map::client::WeatherApiClient;
 use crate::open_weather_map::City;
 use crate::BotError;
-use crate::BINARY_FILE;
 use fang::async_trait;
 use fang::asynk::async_queue::AsyncQueueable;
 use fang::asynk::AsyncError as Error;
@@ -16,8 +15,6 @@ use fang::AsyncRunnable;
 use frankenstein::Message;
 use frankenstein::Update;
 use frankenstein::UpdateContent;
-use openssl::pkey::PKey;
-use openssl::rsa::Rsa;
 use std::fmt::Write;
 use typed_builder::TypedBuilder;
 
@@ -107,19 +104,13 @@ impl ProcessUpdateTask {
                             .await?;
                     } else if Self::check_command("/default", &text) {
                         log::info!("Default command");
-                        match params.repo.get_client_city(&chat_id, user_id).await {
-                            Ok(formated) => {
-                                let vec: Vec<&str> = formated.as_str().split(',').collect();
-                                let n = vec.len();
-                                let city_name = vec[0];
-                                let country = vec[1];
-                                let mut state = "";
-                                if n == 3 {
-                                    state = vec[2];
-                                }
-
-                                let city =
-                                    params.repo.search_city(city_name, country, state).await?;
+                        match params
+                            .repo
+                            .get_client_default_city_id(&chat_id, user_id)
+                            .await
+                        {
+                            Ok(id) => {
+                                let city = params.repo.search_city_by_id(&id).await?;
                                 Self::get_weather(&params, city).await?
                             }
                             Err(_) => {
@@ -173,17 +164,9 @@ impl ProcessUpdateTask {
             .check_user_exists(&params.chat_id, params.user_id)
             .await?
         {
-            let keypair = Rsa::private_key_from_pem(&BINARY_FILE).unwrap();
-            let keypair = PKey::from_rsa(keypair).unwrap();
-
             params
                 .repo
-                .insert_client(
-                    &params.chat_id,
-                    params.user_id,
-                    params.username.to_string(),
-                    &keypair,
-                )
+                .insert_client(&params.chat_id, params.user_id)
                 .await?;
 
             ClientState::Initial
@@ -347,15 +330,9 @@ impl ProcessUpdateTask {
             ClientState::Initial => Ok(Self::get_weather(params, city).await?),
 
             ClientState::SetCity => {
-                let record = if city.state.is_empty() {
-                    format!("{},{}", city.name, city.country)
-                } else {
-                    format!("{},{},{}", city.name, city.country, city.state)
-                };
-
                 params
                     .repo
-                    .modify_city(&params.chat_id, params.user_id, record)
+                    .modify_default_city(&params.chat_id, params.user_id, &city.id)
                     .await?;
 
                 Self::city_updated_message(params).await?;
