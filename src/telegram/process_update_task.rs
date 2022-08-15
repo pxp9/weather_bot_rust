@@ -118,6 +118,8 @@ impl ProcessUpdateTask {
                                 Self::set_city(&params).await?;
                             }
                         }
+                    } else if Self::check_command("/schedule", &text) {
+                        log::info!("Schedule command");
                     } else if Self::check_command("/start", &text) {
                         log::info!("Start command");
                         Self::start(&params).await?;
@@ -200,12 +202,13 @@ impl ProcessUpdateTask {
     async fn start(params: &Params) -> Result<(), BotError> {
         let text = format!(
         "Hi, {}!\nThis bot provides weather info around the globe.\nIn order to use it put the command:\n
-        /pattern ask weather info from city without format\n
-        /set_city set your default city\n
-        /default provides weather info from default city\n
-        It would be really greatful if you take a look my GitHub, look how much work has this bot, if you like this bot give me
-        an star or if you would like to self run it, fork the proyect please.\n
-        <a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot </a>",
+        /pattern Ask weather info from any city worldwide.\n
+        /set_city Set your default city.\n
+        /default Provides weather info from default city.\n
+        /schedule Schedules the bot to run daily to provide weather info from default city.\n
+        It would be really greatful if you take a look my GitHub, look how much work has this bot.\n
+        If you like this bot consider giving me a star on GitHub or if you would like to self run it, fork the proyect please.\n
+        <a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot GitHub repo</a>",
         params.username
             );
         Self::send_message(params, text).await?;
