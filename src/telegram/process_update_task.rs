@@ -65,8 +65,6 @@ impl ProcessUpdateTask {
     }
 
     pub async fn process(&self) -> Result<(), BotError> {
-        log::info!("Received a message {:?}", self.update);
-
         let api = ApiClient::new();
         let repo = Repo::new().await?;
 
@@ -95,9 +93,9 @@ impl ProcessUpdateTask {
 
             match state {
                 ClientState::Initial => {
-                    if Self::check_command("/pattern", &text) {
-                        log::info!("Pattern command");
-                        Self::pattern_city(&params).await?;
+                    if Self::check_command("/find_city", &text) {
+                        log::info!("Find City command");
+                        Self::find_city_message(&params).await?;
 
                         params
                             .repo
@@ -119,6 +117,9 @@ impl ProcessUpdateTask {
                                 Self::set_city(&params).await?;
                             }
                         }
+                    } else if Self::check_command("/set_default_city", &text) {
+                        log::info!("Set Default City command");
+                        Self::set_city(&params).await?;
                     } else if Self::check_command("/schedule", &text) {
                         log::info!("Schedule command");
                     } else if Self::check_command("/start", &text) {
@@ -216,7 +217,7 @@ impl ProcessUpdateTask {
         Ok(())
     }
     // What we do if users write /pattern in Initial state.
-    async fn pattern_city(params: &Params) -> Result<(), BotError> {
+    async fn find_city_message(params: &Params) -> Result<(), BotError> {
         let text = format!(
             "Hi, {}! Write a city , let me see if i find it",
             params.username
@@ -226,7 +227,8 @@ impl ProcessUpdateTask {
     }
 
     async fn set_city(params: &Params) -> Result<(), BotError> {
-        // call pattern_city here
+        Self::find_city_message(params).await?;
+
         params
             .repo
             .modify_state(&params.chat_id, params.user_id, ClientState::FindCity)
@@ -357,7 +359,7 @@ impl ProcessUpdateTask {
         let weather_info = weather_client.fetch().await?;
 
         let text = format!(
-            "Hi {},\n{},{}\nLon {} , Lat {}\n{:?}",
+            "Hi {},\n{},{}\nLon {} , Lat {}\n{}",
             params.username, city.name, city.country, city.coord.lon, city.coord.lat, weather_info,
         );
         Self::send_message(params, text).await?;

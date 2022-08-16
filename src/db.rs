@@ -1,5 +1,6 @@
 use crate::open_weather_map::City;
 use crate::open_weather_map::Coord;
+use crate::seeds::SeedCity;
 use crate::DATABASE_URL;
 use bb8_postgres::bb8::Pool;
 use bb8_postgres::bb8::RunError;
@@ -22,7 +23,7 @@ pub enum BotDbError {
 
 #[derive(Debug, Clone)]
 pub struct Repo {
-    pub pool: Pool<PostgresConnectionManager<NoTls>>,
+    pool: Pool<PostgresConnectionManager<NoTls>>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, ToSql, FromSql)]
@@ -41,7 +42,9 @@ pub enum ClientState {
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
+const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
 const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
+const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
 const MODIFY_BEFORE_STATE: &str = include_str!("queries/modify_before_state.sql");
 const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
@@ -70,6 +73,30 @@ impl Repo {
             .execute(CHECK_USER_EXISTS, &[chat_id, &bytes])
             .await?;
         Ok(n == 1)
+    }
+
+    pub async fn check_cities_exist(&self) -> Result<u64, BotDbError> {
+        let connection = self.pool.get().await?;
+        let n = connection.execute(CHECK_CITIES_EXIST, &[]).await?;
+        Ok(n)
+    }
+
+    pub async fn insert_city(&self, city: SeedCity) -> Result<u64, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let n = connection
+            .execute(
+                INSERT_CITY,
+                &[
+                    &city.name,
+                    &city.country,
+                    &city.state,
+                    &city.coord.lon,
+                    &city.coord.lat,
+                ],
+            )
+            .await?;
+        Ok(n)
     }
 
     pub async fn search_city(
@@ -270,7 +297,7 @@ impl Repo {
 
     pub fn record_to_city(record: &Row) -> City {
         let coord = Coord::builder()
-            .lon(record.get("lot"))
+            .lon(record.get("lon"))
             .lat(record.get("lat"))
             .build();
 

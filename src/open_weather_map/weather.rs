@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use typed_builder::TypedBuilder;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Weather {
     pub coord: Coord,
-    pub weather: Vec<Coord>,
+    pub weather: Vec<WeatherInfo>,
     pub base: String,
     pub main: Main,
     pub visibility: u32,
@@ -14,7 +15,28 @@ pub struct Weather {
     pub timezone: i64,
     pub id: u32,
     pub name: String,
-    pub code: u32,
+    pub cod: u32,
+}
+
+impl fmt::Display for Weather {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut weather_desc: &str = "";
+        if !self.weather.is_empty() {
+            weather_desc = &self.weather[0].description;
+        }
+        let temp = self.main.temp;
+        let temp_min = self.main.temp_min;
+        let temp_max = self.main.temp_max;
+        let pressure = self.main.pressure;
+        let humidity = self.main.humidity;
+
+        let st: String = format!(
+        "\n🌍🌍 Weather: {}\n🌡️🌡️ Mean Temperature: {} ºC\n🧊🧊 Minimum temperature: {} ºC\n🔥🔥 Maximum temperature: {} ºC\n⛰️⛰️ Pressure: {} hPa\n💧💧 Humidity: {} %",
+        weather_desc, temp, temp_min, temp_max, pressure, humidity
+	);
+
+        write!(f, "{}", st)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TypedBuilder)]
@@ -40,19 +62,19 @@ pub struct WeatherInfo {
     pub icon: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Main {
-    pub temp: i64,
-    pub feels_like: i64,
-    pub temp_min: i64,
-    pub temp_max: i64,
-    pub pressue: u32,
+    pub temp: f64,
+    pub feels_like: f64,
+    pub temp_min: f64,
+    pub temp_max: f64,
+    pub pressure: u32,
     pub humidity: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Wind {
-    pub speed: i64,
+    pub speed: f64,
     pub deg: u32,
 }
 
