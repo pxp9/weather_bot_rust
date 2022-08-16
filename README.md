@@ -1,4 +1,4 @@
-<p align="center"><img src="logo.png" alt="logo" height="500px"></p>
+<p align="center"><img src="logo.png" alt="logo" width="350px"></p>
 
 ## MIT
 ### The MIT License
