@@ -20,6 +20,7 @@ use typed_builder::TypedBuilder;
 
 const BOT_NAME: &str = "RustWeather77Bot";
 const ERROR_MESSAGE_FOR_USER: &str = "Failed to fullfill the request";
+pub const TASK_TYPE: &str = "process_update";
 
 #[derive(TypedBuilder)]
 pub struct Params {
@@ -387,8 +388,18 @@ impl ProcessUpdateTask {
 #[async_trait]
 impl AsyncRunnable for ProcessUpdateTask {
     async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), Error> {
-        self.process().await.unwrap();
+        if let Err(error) = self.process().await {
+            log::error!(
+                "Failed to process the update {:?} - {:?}",
+                self.update,
+                error
+            );
+        }
 
         Ok(())
+    }
+
+    fn task_type(&self) -> String {
+        TASK_TYPE.to_string()
     }
 }

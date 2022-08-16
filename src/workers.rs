@@ -1,3 +1,4 @@
+use crate::telegram::process_update_task::TASK_TYPE;
 use crate::DATABASE_URL;
 use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_worker_pool::AsyncWorkerPool;
@@ -26,6 +27,7 @@ pub async fn start_workers() {
         .number_of_workers(NUMBER_OF_WORKERS)
         .sleep_params(params)
         .queue(queue.clone())
+        .task_type(TASK_TYPE)
         .build();
 
     pool.start().await;
