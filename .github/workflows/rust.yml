@@ -57,11 +57,6 @@ jobs:
       - name: Setup db
         run: diesel setup
       
-      - name : Setup key.pem
-        run : |
-          openssl genrsa -out key.pem 2048
-          mv key.pem resources
-
       - name: Run tests
         env:
           DATABASE_URL: "postgres://postgres:postgres@localhost/weather_bot"

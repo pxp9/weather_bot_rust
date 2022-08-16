@@ -1,8 +1,14 @@
 pub mod db;
-pub mod json_parse;
+pub mod open_weather_map;
+pub mod seeds;
 pub mod telegram;
+pub mod workers;
 
+use crate::db::BotDbError;
+use crate::open_weather_map::client::ClientError;
 use lazy_static::lazy_static;
+use thiserror::Error;
+
 lazy_static! {
     pub static ref RUST_TELEGRAM_BOT_TOKEN: String =
         std::env::var("RUST_TELEGRAM_BOT_TOKEN").expect("RUST_TELEGRAM_BOT_TOKEN not set");
@@ -10,12 +16,8 @@ lazy_static! {
         std::env::var("OPEN_WEATHER_MAP_API_TOKEN").expect("OPEN_WEATHER_MAP_API_TOKEN not set");
     pub static ref DATABASE_URL: String =
         std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
-    pub static ref BINARY_FILE: Vec<u8> =
-        std::fs::read("./resources/key.pem").expect("resources/key.pem not set");
 }
 
-use crate::db::BotDbError;
-use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum BotError {
     #[error(transparent)]
@@ -24,4 +26,6 @@ pub enum BotError {
     TelegramError(#[from] frankenstein::Error),
     #[error(transparent)]
     DbError(#[from] BotDbError),
+    #[error(transparent)]
+    WeatherApiError(#[from] ClientError),
 }

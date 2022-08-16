@@ -6,16 +6,16 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-frankenstein = { version = "0.19", default-features = false, features = ["async-http-client"] }
-futures = "0.3"
+frankenstein = { version = "0.20", default-features = false, features = ["async-http-client"] }
 postgres-types = { version = "0.X.X", features = ["derive"] }
 serde_json = "1.0"
 reqwest = "0.9"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
-openssl = "0.10"
+serde = "1"
 bb8-postgres = "0.7.0"
 thiserror = "1.0"
 lazy_static = "1.4.0"
 log = "0.4"
 pretty_env_logger = "0.4"
-fang = { version = "0.7" , features = ["asynk"], default-features = false }
+fang = { git = "https://github.com/ayrat555/fang", branch = "ayrat555/weather-changes" , features = ["asynk"], default-features = false }
+typed-builder = "0.10"

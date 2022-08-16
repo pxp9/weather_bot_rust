@@ -4,7 +4,10 @@ db:
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   postgres:latest
-	
+
+run:
+	RUST_LOG=info DATABASE_URL=postgres://postgres:postgres@localhost/weather_bot cargo run
+
 diesel:
 	DATABASE_URL=postgres://postgres:postgres@localhost/weather_bot diesel migration run
 stop: 
