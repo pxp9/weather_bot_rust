@@ -55,7 +55,7 @@ jobs:
           args: diesel_cli --no-default-features --features "postgres"
       
       - name: Setup db
-          env:
+        env:
           DATABASE_URL: "postgres://postgres:postgres@localhost/weather_bot"
         run: diesel setup
       
