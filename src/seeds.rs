@@ -12,7 +12,6 @@ pub struct SeedCity {
 }
 
 pub async fn insert_seeds() -> Result<(), BotDbError> {
-    log::info!("Parsing cities from json");
     let repo = Repo::new().await?;
 
     // check if cities are in db
@@ -20,18 +19,25 @@ pub async fn insert_seeds() -> Result<(), BotDbError> {
 
     if n == 0 {
         // read json as file
+        log::info!("Reading cities from json");
         let content = fs::read_to_string("resources/city.list.json").unwrap();
 
         // Deserialize json with struct City defined open_weather_map::weather
+        log::info!("Parsing cities from json");
         let cities = serde_json::from_str::<Vec<SeedCity>>(&content).unwrap();
 
         // For each city check if it is in db, if not is in db, insert the city
+        log::info!("Inserting cities");
         for city in cities {
-            if let Err(err) = repo.insert_city(city).await {
-                log::error!("Duplicated entry, not unique: {:?}", err);
+            if let Err(err) = repo.insert_city(city.clone()).await {
+                log::error!("Failed to insert a city {:?} -  {:?}", city, err);
             }
         }
+
+        log::info!("Cities are in database");
+    } else {
+        log::info!("Cities are already inserted, skipping");
     }
-    log::info!("Cities are in database");
+
     Ok(())
 }
