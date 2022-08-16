@@ -13,5 +13,5 @@ diesel:
 stop: 
 	docker kill postgres
 
-docker_image:
-	docker run --env-file ./.env --network host -t pxp9/weather_bot_rust:latest
+docker_run:
+	docker run --rm --env-file ./.env --network host --name weather_bot -t pxp9/weather_bot_rust:latest
