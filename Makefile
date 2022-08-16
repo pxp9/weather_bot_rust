@@ -12,3 +12,6 @@ diesel:
 	DATABASE_URL=postgres://postgres:postgres@localhost/weather_bot diesel migration run
 stop: 
 	docker kill postgres
+
+docker_image:
+	docker run --env-file ./.env --network host -t pxp9/weather_bot_rust:latest
