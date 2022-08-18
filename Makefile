@@ -15,3 +15,14 @@ stop:
 
 docker_run:
 	docker run --rm --env-file ./.env --network host --name weather_bot -t pxp9/weather_bot_rust:latest
+
+compose:
+	if [ -d "./target" ]; then \
+		rm -r "./target"; \
+	fi \
+	
+	if [ ! -d "./db-data" ]; then \
+		mkdir "db-data"; \
+	fi
+	echo "Docker compose";
+	docker compose up
