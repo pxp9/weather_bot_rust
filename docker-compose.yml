@@ -7,7 +7,7 @@ services:
     command: bash -c "sleep 1.5 && /bot/start.sh"
 
   db:
-    image: postgres:latest
+    image: postgres:14.5
     ports:
       - 5432:5432
     volumes:
