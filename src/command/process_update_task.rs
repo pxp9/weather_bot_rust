@@ -84,7 +84,7 @@ impl UpdateProcessor {
             let user = message.from.clone().expect("User not set");
             let chat = repo.find_or_create_chat(&chat_id, user.id).await?;
             let username = match user.username {
-                Some(name) => name,
+                Some(name) => format!("@{}", name),
                 None => user.first_name,
             };
 
@@ -110,6 +110,8 @@ impl UpdateProcessor {
         if Command::Cancel == self.command {
             return self.cancel().await;
         }
+
+        self.send_typing().await?;
 
         match self.chat.state {
             ClientState::Initial => self.process_initial().await,
@@ -186,7 +188,7 @@ impl UpdateProcessor {
             .get_city_row(&self.chat.selected.clone().unwrap(), number)
             .await?;
 
-        match self.chat.state {
+        match self.chat.before_state {
             ClientState::Initial => self.get_weather(city).await,
 
             ClientState::SetCity => {
@@ -285,8 +287,8 @@ impl UpdateProcessor {
 
     async fn start_message(&self) -> Result<(), BotError> {
         let text = "This bot provides weather info around the globe.\nIn order to use it put the command:\n
-        /pattern Ask weather info from any city worldwide.\n
-        /set_city Set your default city.\n
+        /find_city Ask weather info from any city worldwide.\n
+        /set_default_city Set your default city.\n
         /default Provides weather info from default city.\n
         /schedule Schedules the bot to run daily to provide weather info from default city.\n
         It would be really greatful if you take a look my GitHub, look how much work has this bot.\n
@@ -325,6 +327,10 @@ impl UpdateProcessor {
             .send_message(self.chat.id, self.message_id, text_with_username)
             .await?;
 
+        Ok(())
+    }
+    async fn send_typing(&self) -> Result<(), BotError> {
+        self.api.send_typing(self.chat.id).await?;
         Ok(())
     }
 }

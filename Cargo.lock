@@ -463,9 +463,9 @@ checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
 
 [[package]]
 name = "fang"
-version = "0.7.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4c042196a1504fc44ef384176bb1120b805addf4cb64917e23fcad74a58952d"
+checksum = "4c48b6ff20ba9e47722882116d3b4cf35abd8e6375273fce8725184b5fafac99"
 dependencies = [
  "async-recursion",
  "async-trait",
