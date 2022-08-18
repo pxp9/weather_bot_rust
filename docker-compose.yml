@@ -1,0 +1,21 @@
+services:
+  bot:
+    depends_on:
+      - db
+    build: ./
+    env_file: .env
+    command: bash -c "sleep 1.5 && /bot/start.sh"
+
+  db:
+    image: postgres:latest
+    ports:
+      - 5432:5432
+    volumes:
+      - db-data:/data/db
+    environment:
+      - POSTGRES_DB=weather_bot
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+       
+volumes:
+  db-data:
