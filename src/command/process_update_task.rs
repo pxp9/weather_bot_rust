@@ -84,7 +84,7 @@ impl UpdateProcessor {
             let user = message.from.clone().expect("User not set");
             let chat = repo.find_or_create_chat(&chat_id, user.id).await?;
             let username = match user.username {
-                Some(name) => name,
+                Some(name) => format!("@{}", name),
                 None => user.first_name,
             };
 
