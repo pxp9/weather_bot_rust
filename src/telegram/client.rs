@@ -67,9 +67,9 @@ impl ApiClient {
         }
     }
 
-    pub async fn send_typing(&self, message: &Message) -> Result<MethodResponse<bool>, Error> {
+    pub async fn send_typing(&self, chat_id: i64) -> Result<MethodResponse<bool>, Error> {
         let send_chat_action_params = SendChatActionParams::builder()
-            .chat_id(message.chat.id)
+            .chat_id(chat_id)
             .action(ChatAction::Typing)
             .build();
 

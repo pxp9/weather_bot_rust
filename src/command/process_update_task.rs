@@ -111,6 +111,8 @@ impl UpdateProcessor {
             return self.cancel().await;
         }
 
+        self.send_typing().await?;
+
         match self.chat.state {
             ClientState::Initial => self.process_initial().await,
             ClientState::FindCity => self.process_find_city().await,
@@ -325,6 +327,10 @@ impl UpdateProcessor {
             .send_message(self.chat.id, self.message_id, text_with_username)
             .await?;
 
+        Ok(())
+    }
+    async fn send_typing(&self) -> Result<(), BotError> {
+        self.api.send_typing(self.chat.id).await?;
         Ok(())
     }
 }
