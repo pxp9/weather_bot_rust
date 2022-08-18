@@ -110,7 +110,7 @@ $ mkdir db-data
 $ docker compose up
 ```
 
-This will run both containers, PostgreSQL container and 
+This will run both containers, PostgreSQL container and Bot container
 ## 3rd Party Documentations
 
 - [Open Weather Map API](https://openweathermap.org/current)
