@@ -4,6 +4,7 @@ use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_worker_pool::AsyncWorkerPool;
 use fang::NoTls;
 use fang::SleepParams;
+use std::time::Duration;
 
 pub static NUMBER_OF_WORKERS: u32 = 5;
 
@@ -17,10 +18,10 @@ pub async fn start_workers() {
     queue.connect(NoTls).await.unwrap();
 
     let params = SleepParams {
-        sleep_period: 1,
-        max_sleep_period: 5,
-        min_sleep_period: 0,
-        sleep_step: 1,
+        sleep_period: Duration::from_secs(1),
+        max_sleep_period: Duration::from_secs(5),
+        min_sleep_period: Duration::from_secs(0),
+        sleep_step: Duration::from_secs(1),
     };
 
     let mut pool: AsyncWorkerPool<AsyncQueue<NoTls>> = AsyncWorkerPool::builder()
