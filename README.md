@@ -96,7 +96,7 @@ $ make stop
 - Install docker
 - Install docker compose (tested with [docker-compose v2](https://docs.docker.com/compose/#compose-v2-and-the-new-docker-compose-command)).
 
-### Set this environments values in `.env` file.
+### Set these environments values in `.env` file.
 
 - SET_DB see in [start.sh](https://github.com/pxp9/weather_bot_rust/blob/master/docker/start.sh) file what it does.
 - REVERT_DB see in [start.sh](https://github.com/pxp9/weather_bot_rust/blob/master/docker/start.sh) file what it does.
