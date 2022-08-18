@@ -285,8 +285,8 @@ impl UpdateProcessor {
 
     async fn start_message(&self) -> Result<(), BotError> {
         let text = "This bot provides weather info around the globe.\nIn order to use it put the command:\n
-        /pattern Ask weather info from any city worldwide.\n
-        /set_city Set your default city.\n
+        /find_city Ask weather info from any city worldwide.\n
+        /set_default_city Set your default city.\n
         /default Provides weather info from default city.\n
         /schedule Schedules the bot to run daily to provide weather info from default city.\n
         It would be really greatful if you take a look my GitHub, look how much work has this bot.\n
