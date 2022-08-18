@@ -2,3 +2,4 @@
 *.pem
 *.jpg
 .env
+/db-data
