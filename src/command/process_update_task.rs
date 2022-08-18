@@ -19,7 +19,7 @@ use std::fmt::Write;
 use std::str::FromStr;
 use typed_builder::TypedBuilder;
 
-const BOT_NAME: &str = "RustWeather77Bot";
+const BOT_NAME: &str = "@RustWeather77Bot";
 pub const TASK_TYPE: &str = "process_update";
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -156,46 +156,6 @@ impl Repo {
         }
     }
 
-    pub async fn get_client_selected(
-        &self,
-        chat_id: &i64,
-        user_id: u64,
-    ) -> Result<Option<String>, BotDbError> {
-        let chat = self.get_chat(chat_id, user_id).await?;
-
-        Ok(chat.selected)
-    }
-
-    pub async fn get_client_default_city_id(
-        &self,
-        chat_id: &i64,
-        user_id: u64,
-    ) -> Result<Option<i32>, BotDbError> {
-        let chat = self.get_chat(chat_id, user_id).await?;
-
-        Ok(chat.default_city_id)
-    }
-
-    pub async fn get_client_before_state(
-        &self,
-        chat_id: &i64,
-        user_id: u64,
-    ) -> Result<ClientState, BotDbError> {
-        let chat = self.get_chat(chat_id, user_id).await?;
-
-        Ok(chat.before_state)
-    }
-
-    pub async fn get_client_state(
-        &self,
-        chat_id: &i64,
-        user_id: u64,
-    ) -> Result<ClientState, BotDbError> {
-        let chat = self.get_chat(chat_id, user_id).await?;
-
-        Ok(chat.state)
-    }
-
     pub async fn get_chat(&self, chat_id: &i64, user_id: u64) -> Result<Chat, BotDbError> {
         let connection = self.pool.get().await?;
 
