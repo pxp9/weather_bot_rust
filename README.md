@@ -118,7 +118,7 @@ This will run both containers, PostgreSQL container and Bot container
 - [Json parser](https://docs.rs/serde_json/latest/serde_json/)
 - [Serialize Deserialize library](https://docs.rs/serde/latest/serde/)
 - [Async Http Request](https://docs.rs/reqwest/latest/reqwest/)
-- [Async runtime required by telegram-bot](https://docs.rs/tokio/latest/tokio/)
+- [Async runtime required by frankenstein](https://docs.rs/tokio/latest/tokio/)
 - [Async database wrapper for PosgreSQL with Pool](https://docs.rs/bb8-postgres/0.7.0/bb8_postgres/)
 <!---
 ## Future functions
