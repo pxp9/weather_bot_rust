@@ -186,7 +186,7 @@ impl UpdateProcessor {
             .get_city_row(&self.chat.selected.clone().unwrap(), number)
             .await?;
 
-        match self.chat.state {
+        match self.chat.before_state {
             ClientState::Initial => self.get_weather(city).await,
 
             ClientState::SetCity => {
