@@ -342,12 +342,9 @@ mod db_test {
         assert_eq!(n, 1_u64);
 
         // testing get state
-        let actual_state = db_controller
-            .get_client_state(&chat_id, user_id)
-            .await
-            .unwrap();
+        let chat = db_controller.get_chat(&chat_id, user_id).await.unwrap();
 
-        assert_eq!(actual_state, ClientState::FindCity);
+        assert_eq!(chat.state, ClientState::FindCity);
 
         let n = db_controller
             .modify_state(&chat_id, user_id, ClientState::Initial)
@@ -355,12 +352,9 @@ mod db_test {
             .unwrap();
         assert_eq!(n, 1_u64);
 
-        let actual_state = db_controller
-            .get_client_state(&chat_id, user_id)
-            .await
-            .unwrap();
+        let chat = db_controller.get_chat(&chat_id, user_id).await.unwrap();
 
-        assert_eq!(actual_state, ClientState::Initial);
+        assert_eq!(chat.state, ClientState::Initial);
 
         let n = db_controller.delete_client(&111111, 1111111).await.unwrap();
         assert_eq!(n, 1_u64);
