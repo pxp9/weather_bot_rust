@@ -1,5 +1,5 @@
 use super::client::ApiClient;
-use super::process_update_task::ProcessUpdateTask;
+use crate::command::ProcessUpdateTask;
 use crate::DATABASE_URL;
 use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_queue::AsyncQueueable;

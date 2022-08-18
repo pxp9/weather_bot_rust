@@ -10,6 +10,21 @@ use bb8_postgres::PostgresConnectionManager;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
 use thiserror::Error;
+use typed_builder::TypedBuilder;
+
+const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
+const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
+const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
+const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
+const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
+const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
+const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
+const MODIFY_BEFORE_STATE: &str = include_str!("queries/modify_before_state.sql");
+const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
+const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
+const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
+const SEARCH_CITY_BY_ID: &str = include_str!("queries/search_city_by_id.sql");
+const GET_CHAT: &str = include_str!("queries/get_chat.sql");
 
 #[derive(Debug, Error)]
 pub enum BotDbError {
@@ -19,11 +34,6 @@ pub enum BotDbError {
     PgError(#[from] bb8_postgres::tokio_postgres::Error),
     #[error("City not found")]
     CityNotFoundError,
-}
-
-#[derive(Debug, Clone)]
-pub struct Repo {
-    pool: Pool<PostgresConnectionManager<NoTls>>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, ToSql, FromSql)]
@@ -39,19 +49,20 @@ pub enum ClientState {
     SetCity,
 }
 
-const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
-const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
-const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
-const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
-const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
-const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
-const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
-const MODIFY_BEFORE_STATE: &str = include_str!("queries/modify_before_state.sql");
-const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
-const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
-const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
-const SEARCH_CITY_BY_ID: &str = include_str!("queries/search_city_by_id.sql");
-const SEARCH_CLIENT: &str = include_str!("queries/search_client.sql");
+#[derive(Debug, Clone)]
+pub struct Repo {
+    pool: Pool<PostgresConnectionManager<NoTls>>,
+}
+
+#[derive(Debug, Clone, TypedBuilder)]
+pub struct Chat {
+    pub id: i64,
+    pub user_id: u64,
+    pub state: ClientState,
+    pub before_state: ClientState,
+    pub selected: Option<String>,
+    pub default_city_id: Option<i32>,
+}
 
 impl Repo {
     async fn pool(url: &str) -> Result<Pool<PostgresConnectionManager<NoTls>>, BotDbError> {
@@ -73,6 +84,23 @@ impl Repo {
             .execute(CHECK_USER_EXISTS, &[chat_id, &bytes])
             .await?;
         Ok(n == 1)
+    }
+
+    pub async fn find_or_create_chat(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<Chat, BotDbError> {
+        if self.check_user_exists(chat_id, user_id).await? {
+            let chat = self.get_chat(chat_id, user_id).await?;
+
+            Ok(chat)
+        } else {
+            self.insert_client(chat_id, user_id).await?;
+            let chat = self.get_chat(chat_id, user_id).await?;
+
+            Ok(chat)
+        }
     }
 
     pub async fn check_cities_exist(&self) -> Result<u64, BotDbError> {
@@ -132,20 +160,20 @@ impl Repo {
         &self,
         chat_id: &i64,
         user_id: u64,
-    ) -> Result<String, BotDbError> {
-        let row: &Row = &self.search_client(chat_id, user_id).await?;
+    ) -> Result<Option<String>, BotDbError> {
+        let chat = self.get_chat(chat_id, user_id).await?;
 
-        Ok(row.get("selected"))
+        Ok(chat.selected)
     }
 
     pub async fn get_client_default_city_id(
         &self,
         chat_id: &i64,
         user_id: u64,
-    ) -> Result<i32, BotDbError> {
-        let row: &Row = &self.search_client(chat_id, user_id).await?;
+    ) -> Result<Option<i32>, BotDbError> {
+        let chat = self.get_chat(chat_id, user_id).await?;
 
-        Ok(row.try_get("default_city_id")?)
+        Ok(chat.default_city_id)
     }
 
     pub async fn get_client_before_state(
@@ -153,9 +181,9 @@ impl Repo {
         chat_id: &i64,
         user_id: u64,
     ) -> Result<ClientState, BotDbError> {
-        let row: &Row = &self.search_client(chat_id, user_id).await?;
+        let chat = self.get_chat(chat_id, user_id).await?;
 
-        Ok(row.get("before_state"))
+        Ok(chat.before_state)
     }
 
     pub async fn get_client_state(
@@ -163,21 +191,28 @@ impl Repo {
         chat_id: &i64,
         user_id: u64,
     ) -> Result<ClientState, BotDbError> {
-        let row: &Row = &self.search_client(chat_id, user_id).await?;
+        let chat = self.get_chat(chat_id, user_id).await?;
 
-        Ok(row.get("state"))
+        Ok(chat.state)
     }
 
-    pub async fn search_client(&self, chat_id: &i64, user_id: u64) -> Result<Row, BotDbError> {
+    pub async fn get_chat(&self, chat_id: &i64, user_id: u64) -> Result<Chat, BotDbError> {
         let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
-        let row = connection
-            .query_one(SEARCH_CLIENT, &[chat_id, &bytes])
-            .await?;
+        let row = connection.query_one(GET_CHAT, &[chat_id, &bytes]).await?;
 
-        Ok(row)
+        let chat = Chat::builder()
+            .id(row.get("id"))
+            .user_id(user_id)
+            .state(row.get("state"))
+            .before_state(row.get("before_state"))
+            .selected(row.try_get("selected").ok())
+            .default_city_id(row.try_get("default_city_id").ok())
+            .build();
+
+        Ok(chat)
     }
 
     pub async fn insert_client(&self, chat_id: &i64, user_id: u64) -> Result<u64, BotDbError> {

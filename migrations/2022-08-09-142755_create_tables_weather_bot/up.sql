@@ -18,14 +18,11 @@ CREATE TABLE cities (
 
 CREATE TABLE chats (
   id BIGINT,
-  user_id BYTEA, 
+  user_id BYTEA,
   state client_state DEFAULT 'initial' NOT NULL, -- Initial
   before_state client_state DEFAULT 'initial' NOT NULL, -- Initial
   selected VARCHAR(80),
   default_city_id INT,
   PRIMARY KEY (id, user_id),
-  CONSTRAINT fk_cities
-    FOREIGN KEY(default_city_id)
-  REFERENCES cities(id)
+  CONSTRAINT fk_cities FOREIGN KEY(default_city_id) REFERENCES cities(id)
 );
-

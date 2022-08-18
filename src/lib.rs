@@ -1,3 +1,4 @@
+pub mod command;
 pub mod db;
 pub mod open_weather_map;
 pub mod seeds;
@@ -6,6 +7,7 @@ pub mod workers;
 
 use crate::db::BotDbError;
 use crate::open_weather_map::client::ClientError;
+use frankenstein::Update;
 use lazy_static::lazy_static;
 use thiserror::Error;
 
@@ -22,6 +24,8 @@ lazy_static! {
 pub enum BotError {
     #[error(transparent)]
     MessageError(#[from] std::fmt::Error),
+    #[error("Update can not be processed {}", self)]
+    UpdateNotMessage(Update),
     #[error(transparent)]
     TelegramError(#[from] frankenstein::Error),
     #[error(transparent)]
