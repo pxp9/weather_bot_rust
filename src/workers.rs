@@ -18,10 +18,10 @@ pub async fn start_workers() {
     queue.connect(NoTls).await.unwrap();
 
     let params = SleepParams {
-        sleep_period: Duration::from_millis(500),
-        max_sleep_period: Duration::from_secs(2),
+        sleep_period: Duration::from_millis(250),
+        max_sleep_period: Duration::from_millis(1500),
         min_sleep_period: Duration::from_secs(0),
-        sleep_step: Duration::from_millis(300),
+        sleep_step: Duration::from_millis(250),
     };
 
     let mut pool: AsyncWorkerPool<AsyncQueue<NoTls>> = AsyncWorkerPool::builder()
