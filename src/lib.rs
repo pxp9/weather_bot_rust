@@ -1,3 +1,4 @@
+pub mod command;
 pub mod db;
 pub mod open_weather_map;
 pub mod seeds;
@@ -22,6 +23,8 @@ lazy_static! {
 pub enum BotError {
     #[error(transparent)]
     MessageError(#[from] std::fmt::Error),
+    #[error("Update can not be processed {}", self)]
+    UpdateNotMessage(String),
     #[error(transparent)]
     TelegramError(#[from] frankenstein::Error),
     #[error(transparent)]

@@ -1,4 +1,4 @@
-use crate::telegram::process_update_task::TASK_TYPE;
+use crate::command::process_update_task::TASK_TYPE;
 use crate::DATABASE_URL;
 use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_worker_pool::AsyncWorkerPool;
@@ -18,7 +18,7 @@ pub async fn start_workers() {
 
     let params = SleepParams {
         sleep_period: 1,
-        max_sleep_period: 1,
+        max_sleep_period: 5,
         min_sleep_period: 0,
         sleep_step: 1,
     };

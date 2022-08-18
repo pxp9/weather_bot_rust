@@ -80,13 +80,14 @@ impl ApiClient {
 
     pub async fn send_message(
         &self,
-        message: &Message,
+        chat_id: i64,
+        message_id: i32,
         text: String,
     ) -> Result<MethodResponse<Message>, Error> {
         let send_message_params = SendMessageParams::builder()
-            .chat_id(message.chat.id)
+            .chat_id(chat_id)
             .text(text)
-            .reply_to_message_id(message.message_id)
+            .reply_to_message_id(message_id)
             .parse_mode(ParseMode::Html)
             .build();
 
