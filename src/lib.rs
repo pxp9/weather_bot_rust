@@ -7,7 +7,6 @@ pub mod workers;
 
 use crate::db::BotDbError;
 use crate::open_weather_map::client::ClientError;
-use frankenstein::Update;
 use lazy_static::lazy_static;
 use thiserror::Error;
 
@@ -25,7 +24,7 @@ pub enum BotError {
     #[error(transparent)]
     MessageError(#[from] std::fmt::Error),
     #[error("Update can not be processed {}", self)]
-    UpdateNotMessage(Update),
+    UpdateNotMessage(String),
     #[error(transparent)]
     TelegramError(#[from] frankenstein::Error),
     #[error(transparent)]

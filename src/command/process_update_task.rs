@@ -72,7 +72,7 @@ impl UpdateProcessor {
     pub async fn create(update: Update) -> Result<Self, BotError> {
         if let UpdateContent::Message(message) = &update.content {
             if message.text.is_none() {
-                return Err(BotError::UpdateNotMessage(update));
+                return Err(BotError::UpdateNotMessage("no text".to_string()));
             }
 
             let text = message.text.clone().unwrap();
@@ -102,7 +102,7 @@ impl UpdateProcessor {
 
             Ok(processor)
         } else {
-            return Err(BotError::UpdateNotMessage(update));
+            Err(BotError::UpdateNotMessage("no message".to_string()))
         }
     }
 
