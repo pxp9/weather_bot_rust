@@ -40,8 +40,8 @@ pub enum Command {
 
 #[derive(TypedBuilder)]
 pub struct UpdateProcessor {
-    api: ApiClient,
-    repo: Repo,
+    api: &'static ApiClient,
+    repo: &'static Repo,
     text: String,
     message_id: i32,
     username: String,
@@ -77,8 +77,8 @@ impl UpdateProcessor {
 
             let text = message.text.clone().unwrap();
 
-            let repo = Repo::new().await?;
-            let api = ApiClient::new();
+            let repo = Repo::repo().await?;
+            let api = ApiClient::api_client().await;
 
             let chat_id: i64 = message.chat.id;
             let user = message.from.clone().expect("User not set");
@@ -299,16 +299,13 @@ impl UpdateProcessor {
     }
 
     async fn get_weather(&self, city: City) -> Result<(), BotError> {
-        let weather_client = WeatherApiClient::builder()
-            .lat(city.coord.lat)
-            .lon(city.coord.lon)
-            .build();
+        let weather_client = WeatherApiClient::weather_client().await;
 
-        let weather_info = weather_client.fetch().await?;
+        let weather_info = weather_client.fetch(city.coord.lat, city.coord.lon).await?;
 
         let text = format!(
-            "{},{}\nLon {} , Lat {}\n{}",
-            city.name, city.country, city.coord.lon, city.coord.lat, weather_info,
+            "{},{}\nLat {} , Lon {}\n{}",
+            city.name, city.country, city.coord.lat, city.coord.lon, weather_info,
         );
 
         self.send_message(&text).await

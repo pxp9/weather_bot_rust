@@ -10,7 +10,10 @@ use bb8_postgres::PostgresConnectionManager;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
 use thiserror::Error;
+use tokio::sync::OnceCell;
 use typed_builder::TypedBuilder;
+
+static REPO: OnceCell<Repo> = OnceCell::const_new();
 
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
@@ -65,6 +68,10 @@ pub struct Chat {
 }
 
 impl Repo {
+    pub async fn repo() -> Result<&'static Repo, BotDbError> {
+        REPO.get_or_try_init(Repo::new).await
+    }
+
     async fn pool(url: &str) -> Result<Pool<PostgresConnectionManager<NoTls>>, BotDbError> {
         let pg_mgr = PostgresConnectionManager::new_from_stringlike(url, NoTls)?;
 
