@@ -106,8 +106,7 @@ $ make stop
 - DATABASE_URL=postgres://postgres:postgres@db/weather_bot
 
 ```
-$ mkdir db-data
-$ docker compose up
+$ make compose
 ```
 
 This will run both containers, PostgreSQL container and Bot container
