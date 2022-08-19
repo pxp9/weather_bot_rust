@@ -1,5 +1,6 @@
 use super::weather::Weather;
 use crate::OPEN_WEATHER_MAP_API_TOKEN;
+use reqwest::Client;
 use thiserror::Error;
 use typed_builder::TypedBuilder;
 
@@ -8,7 +9,7 @@ const LANG: &str = "en";
 
 #[derive(TypedBuilder, Clone)]
 pub struct WeatherApiClient {
-    client: reqwest::Client,
+    client: Client,
 }
 
 #[derive(Debug, Error)]
@@ -22,6 +23,9 @@ pub enum ClientError {
 }
 
 impl WeatherApiClient {
+    pub async fn new() -> Self {
+        WeatherApiClient::builder().client(Client::new()).build()
+    }
     pub async fn fetch(&self, lat: f64, lon: f64) -> Result<Weather, ClientError> {
         let request_url = format!(
             "https://api.openweathermap.org/data/2.5/weather?lat={}&lon={}&appid={}&units={}&lang={}",

@@ -20,14 +20,8 @@ pub struct ApiClient {
     buffer: VecDeque<Update>,
 }
 
-impl Default for ApiClient {
-    fn default() -> ApiClient {
-        Self::new()
-    }
-}
-
 impl ApiClient {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let telegram_client = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
 
         let update_params = GetUpdatesParams::builder()

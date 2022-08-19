@@ -15,7 +15,6 @@ use fang::typetag;
 use fang::AsyncRunnable;
 use frankenstein::Update;
 use frankenstein::UpdateContent;
-use reqwest::Client;
 use std::fmt::Write;
 use std::str::FromStr;
 use tokio::sync::OnceCell;
@@ -74,20 +73,6 @@ impl FromStr for Command {
     }
 }
 
-async fn repo_create() -> Result<Repo, BotError> {
-    match Repo::new().await {
-        Ok(repo) => Ok(repo),
-        Err(err) => Err(BotError::DbError(err)),
-    }
-}
-
-async fn api_create() -> ApiClient {
-    ApiClient::new()
-}
-
-async fn weather_client_create() -> WeatherApiClient {
-    WeatherApiClient::builder().client(Client::new()).build()
-}
 impl UpdateProcessor {
     pub async fn create(update: Update) -> Result<Self, BotError> {
         if let UpdateContent::Message(message) = &update.content {
@@ -97,8 +82,8 @@ impl UpdateProcessor {
 
             let text = message.text.clone().unwrap();
 
-            let repo = REPO.get_or_try_init(repo_create).await?;
-            let api = API_CLIENT.get_or_init(api_create).await;
+            let repo = REPO.get_or_try_init(Repo::new).await?;
+            let api = API_CLIENT.get_or_init(ApiClient::new).await;
 
             let chat_id: i64 = message.chat.id;
             let user = message.from.clone().expect("User not set");
@@ -319,7 +304,7 @@ impl UpdateProcessor {
     }
 
     async fn get_weather(&self, city: City) -> Result<(), BotError> {
-        let weather_client = WEATHER_CLIENT.get_or_init(weather_client_create).await;
+        let weather_client = WEATHER_CLIENT.get_or_init(WeatherApiClient::new).await;
 
         let weather_info = weather_client.fetch(city.coord.lat, city.coord.lon).await?;
 
