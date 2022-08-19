@@ -13,6 +13,7 @@ use frankenstein::SendMessageParams;
 use frankenstein::Update;
 use std::collections::VecDeque;
 
+#[derive(Clone)]
 pub struct ApiClient {
     telegram_client: AsyncApi,
     update_params: GetUpdatesParams,

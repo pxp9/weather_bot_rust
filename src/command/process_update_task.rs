@@ -17,10 +17,14 @@ use frankenstein::Update;
 use frankenstein::UpdateContent;
 use std::fmt::Write;
 use std::str::FromStr;
+use tokio::sync::OnceCell;
 use typed_builder::TypedBuilder;
 
 const BOT_NAME: &str = "@RustWeather77Bot";
 pub const TASK_TYPE: &str = "process_update";
+
+pub static REPO: OnceCell<Repo> = OnceCell::const_new();
+pub static API_CLIENT: OnceCell<ApiClient> = OnceCell::const_new();
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "fang::serde")]
@@ -68,6 +72,14 @@ impl FromStr for Command {
     }
 }
 
+async fn repo_create() -> Repo {
+    Repo::new().await.unwrap()
+}
+
+async fn api_create() -> ApiClient {
+    ApiClient::new()
+}
+
 impl UpdateProcessor {
     pub async fn create(update: Update) -> Result<Self, BotError> {
         if let UpdateContent::Message(message) = &update.content {
@@ -77,8 +89,8 @@ impl UpdateProcessor {
 
             let text = message.text.clone().unwrap();
 
-            let repo = Repo::new().await?;
-            let api = ApiClient::new();
+            let repo = REPO.get_or_init(repo_create).await;
+            let api = API_CLIENT.get_or_init(api_create).await;
 
             let chat_id: i64 = message.chat.id;
             let user = message.from.clone().expect("User not set");
@@ -91,8 +103,8 @@ impl UpdateProcessor {
             let command = Command::from_str(&text).unwrap();
 
             let processor = Self::builder()
-                .repo(repo)
-                .api(api)
+                .repo(repo.clone())
+                .api(api.clone())
                 .message_id(message.message_id)
                 .text(text)
                 .username(username)
