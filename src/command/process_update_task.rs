@@ -72,8 +72,11 @@ impl FromStr for Command {
     }
 }
 
-async fn repo_create() -> Repo {
-    Repo::new().await.unwrap()
+async fn repo_create() -> Result<Repo, BotError> {
+    match Repo::new().await {
+        Ok(repo) => Ok(repo),
+        Err(err) => Err(BotError::DbError(err)),
+    }
 }
 
 async fn api_create() -> ApiClient {
@@ -89,7 +92,7 @@ impl UpdateProcessor {
 
             let text = message.text.clone().unwrap();
 
-            let repo = REPO.get_or_init(repo_create).await;
+            let repo = REPO.get_or_try_init(repo_create).await?;
             let api = API_CLIENT.get_or_init(api_create).await;
 
             let chat_id: i64 = message.chat.id;
