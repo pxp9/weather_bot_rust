@@ -2,10 +2,13 @@ use super::weather::Weather;
 use crate::OPEN_WEATHER_MAP_API_TOKEN;
 use reqwest::Client;
 use thiserror::Error;
+use tokio::sync::OnceCell;
 use typed_builder::TypedBuilder;
 
 const UNITS: &str = "metric";
 const LANG: &str = "en";
+
+static WEATHER_CLIENT: OnceCell<WeatherApiClient> = OnceCell::const_new();
 
 #[derive(TypedBuilder, Clone)]
 pub struct WeatherApiClient {
@@ -23,6 +26,12 @@ pub enum ClientError {
 }
 
 impl WeatherApiClient {
+    pub async fn weather_client() -> Self {
+        WEATHER_CLIENT
+            .get_or_init(WeatherApiClient::new)
+            .await
+            .clone()
+    }
     pub async fn new() -> Self {
         WeatherApiClient::builder().client(Client::new()).build()
     }

@@ -17,15 +17,10 @@ use frankenstein::Update;
 use frankenstein::UpdateContent;
 use std::fmt::Write;
 use std::str::FromStr;
-use tokio::sync::OnceCell;
 use typed_builder::TypedBuilder;
 
 const BOT_NAME: &str = "@RustWeather77Bot";
 pub const TASK_TYPE: &str = "process_update";
-
-pub static REPO: OnceCell<Repo> = OnceCell::const_new();
-pub static API_CLIENT: OnceCell<ApiClient> = OnceCell::const_new();
-pub static WEATHER_CLIENT: OnceCell<WeatherApiClient> = OnceCell::const_new();
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "fang::serde")]
@@ -82,8 +77,8 @@ impl UpdateProcessor {
 
             let text = message.text.clone().unwrap();
 
-            let repo = REPO.get_or_try_init(Repo::new).await?;
-            let api = API_CLIENT.get_or_init(ApiClient::new).await;
+            let repo = Repo::repo().await?;
+            let api = ApiClient::api_client().await;
 
             let chat_id: i64 = message.chat.id;
             let user = message.from.clone().expect("User not set");
@@ -96,7 +91,7 @@ impl UpdateProcessor {
             let command = Command::from_str(&text).unwrap();
 
             let processor = Self::builder()
-                .repo(repo.clone())
+                .repo(repo)
                 .api(api.clone())
                 .message_id(message.message_id)
                 .text(text)
@@ -304,7 +299,7 @@ impl UpdateProcessor {
     }
 
     async fn get_weather(&self, city: City) -> Result<(), BotError> {
-        let weather_client = WEATHER_CLIENT.get_or_init(WeatherApiClient::new).await;
+        let weather_client = WeatherApiClient::weather_client().await;
 
         let weather_info = weather_client.fetch(city.coord.lat, city.coord.lon).await?;
 

@@ -12,6 +12,9 @@ use frankenstein::SendChatActionParams;
 use frankenstein::SendMessageParams;
 use frankenstein::Update;
 use std::collections::VecDeque;
+use tokio::sync::OnceCell;
+
+static API_CLIENT: OnceCell<ApiClient> = OnceCell::const_new();
 
 #[derive(Clone)]
 pub struct ApiClient {
@@ -21,6 +24,10 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
+    pub async fn api_client() -> Self {
+        API_CLIENT.get_or_init(ApiClient::new).await.clone()
+    }
+
     pub async fn new() -> Self {
         let telegram_client = AsyncApi::new(&RUST_TELEGRAM_BOT_TOKEN);
 
