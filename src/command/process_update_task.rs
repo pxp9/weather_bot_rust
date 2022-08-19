@@ -15,6 +15,7 @@ use fang::typetag;
 use fang::AsyncRunnable;
 use frankenstein::Update;
 use frankenstein::UpdateContent;
+use reqwest::Client;
 use std::fmt::Write;
 use std::str::FromStr;
 use tokio::sync::OnceCell;
@@ -25,6 +26,7 @@ pub const TASK_TYPE: &str = "process_update";
 
 pub static REPO: OnceCell<Repo> = OnceCell::const_new();
 pub static API_CLIENT: OnceCell<ApiClient> = OnceCell::const_new();
+pub static WEATHER_CLIENT: OnceCell<WeatherApiClient> = OnceCell::const_new();
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "fang::serde")]
@@ -83,6 +85,9 @@ async fn api_create() -> ApiClient {
     ApiClient::new()
 }
 
+async fn weather_client_create() -> WeatherApiClient {
+    WeatherApiClient::builder().client(Client::new()).build()
+}
 impl UpdateProcessor {
     pub async fn create(update: Update) -> Result<Self, BotError> {
         if let UpdateContent::Message(message) = &update.content {
@@ -314,16 +319,13 @@ impl UpdateProcessor {
     }
 
     async fn get_weather(&self, city: City) -> Result<(), BotError> {
-        let weather_client = WeatherApiClient::builder()
-            .lat(city.coord.lat)
-            .lon(city.coord.lon)
-            .build();
+        let weather_client = WEATHER_CLIENT.get_or_init(weather_client_create).await;
 
-        let weather_info = weather_client.fetch().await?;
+        let weather_info = weather_client.fetch(city.coord.lat, city.coord.lon).await?;
 
         let text = format!(
-            "{},{}\nLon {} , Lat {}\n{}",
-            city.name, city.country, city.coord.lon, city.coord.lat, weather_info,
+            "{},{}\nLat {} , Lon {}\n{}",
+            city.name, city.country, city.coord.lat, city.coord.lon, weather_info,
         );
 
         self.send_message(&text).await

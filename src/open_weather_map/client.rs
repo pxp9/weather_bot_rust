@@ -6,10 +6,9 @@ use typed_builder::TypedBuilder;
 const UNITS: &str = "metric";
 const LANG: &str = "en";
 
-#[derive(TypedBuilder)]
+#[derive(TypedBuilder, Clone)]
 pub struct WeatherApiClient {
-    lat: f64,
-    lon: f64,
+    client: reqwest::Client,
 }
 
 #[derive(Debug, Error)]
@@ -23,13 +22,13 @@ pub enum ClientError {
 }
 
 impl WeatherApiClient {
-    pub async fn fetch(&self) -> Result<Weather, ClientError> {
+    pub async fn fetch(&self, lat: f64, lon: f64) -> Result<Weather, ClientError> {
         let request_url = format!(
             "https://api.openweathermap.org/data/2.5/weather?lat={}&lon={}&appid={}&units={}&lang={}",
-            self.lat, self.lon, OPEN_WEATHER_MAP_API_TOKEN.as_str(), UNITS, LANG
+            lat, lon, OPEN_WEATHER_MAP_API_TOKEN.as_str(), UNITS, LANG
         );
 
-        let response = reqwest::get(&request_url)?;
+        let response = self.client.get(&request_url).send()?;
 
         Self::decode_response(response)
     }
