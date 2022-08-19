@@ -24,8 +24,8 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub async fn api_client() -> Self {
-        API_CLIENT.get_or_init(ApiClient::new).await.clone()
+    pub async fn api_client() -> &'static Self {
+        API_CLIENT.get_or_init(ApiClient::new).await
     }
 
     pub async fn new() -> Self {

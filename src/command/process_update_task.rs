@@ -40,8 +40,8 @@ pub enum Command {
 
 #[derive(TypedBuilder)]
 pub struct UpdateProcessor {
-    api: ApiClient,
-    repo: Repo,
+    api: &'static ApiClient,
+    repo: &'static Repo,
     text: String,
     message_id: i32,
     username: String,
@@ -92,7 +92,7 @@ impl UpdateProcessor {
 
             let processor = Self::builder()
                 .repo(repo)
-                .api(api.clone())
+                .api(api)
                 .message_id(message.message_id)
                 .text(text)
                 .username(username)

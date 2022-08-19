@@ -26,11 +26,8 @@ pub enum ClientError {
 }
 
 impl WeatherApiClient {
-    pub async fn weather_client() -> Self {
-        WEATHER_CLIENT
-            .get_or_init(WeatherApiClient::new)
-            .await
-            .clone()
+    pub async fn weather_client() -> &'static Self {
+        WEATHER_CLIENT.get_or_init(WeatherApiClient::new).await
     }
     pub async fn new() -> Self {
         WeatherApiClient::builder().client(Client::new()).build()

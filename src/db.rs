@@ -68,11 +68,8 @@ pub struct Chat {
 }
 
 impl Repo {
-    pub async fn repo() -> Result<Repo, BotDbError> {
-        match REPO.get_or_try_init(Repo::new).await {
-            Ok(repo) => Ok(repo.clone()),
-            Err(err) => Err(err),
-        }
+    pub async fn repo() -> Result<&'static Repo, BotDbError> {
+        REPO.get_or_try_init(Repo::new).await
     }
 
     async fn pool(url: &str) -> Result<Pool<PostgresConnectionManager<NoTls>>, BotDbError> {

@@ -14,7 +14,7 @@ pub struct Handler {
 
 impl Handler {
     pub async fn new() -> Self {
-        let client = ApiClient::api_client().await;
+        let client = ApiClient::api_client().await.clone();
         let queue = Self::init_queue().await;
 
         Self { client, queue }
