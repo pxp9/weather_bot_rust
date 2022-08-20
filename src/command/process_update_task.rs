@@ -72,6 +72,8 @@ impl UpdateProcessor {
     pub async fn create(update: Update) -> Result<Self, BotError> {
         if let UpdateContent::Message(message) = &update.content {
             if message.text.is_none() {
+                log::error!("Update doesn't contain any text {:?}", message);
+
                 return Err(BotError::UpdateNotMessage("no text".to_string()));
             }
 
@@ -102,56 +104,54 @@ impl UpdateProcessor {
 
             Ok(processor)
         } else {
+            log::error!("Update is not a message {:?}", update);
+
             Err(BotError::UpdateNotMessage("no message".to_string()))
         }
     }
 
     pub async fn process(&self) -> Result<(), BotError> {
-        if Command::Cancel == self.command {
-            return self.cancel().await;
-        }
-
         self.send_typing().await?;
+
+        if Command::Cancel == self.command {
+            return self.cancel(None).await;
+        }
 
         match self.chat.state {
             ClientState::Initial => self.process_initial().await,
             ClientState::FindCity => self.process_find_city().await,
             ClientState::Number => self.process_number().await,
-            _ => Ok(()),
+            _ => self.revert_state().await,
         }
     }
 
     async fn process_initial(&self) -> Result<(), BotError> {
         match self.command {
             Command::FindCity => {
-                self.find_city_message().await?;
-
                 self.repo
                     .modify_state(&self.chat.id, self.chat.user_id, ClientState::FindCity)
                     .await?;
+
+                self.find_city_message().await?;
+
+                Ok(())
             }
-            Command::Start => {
-                self.start_message().await?;
-            }
-            Command::SetDefaultCity => {
-                self.set_city().await?;
-            }
+            Command::Start => self.start_message().await,
+            Command::SetDefaultCity => self.set_city().await,
             Command::Default => match self.chat.default_city_id {
                 Some(id) => {
                     let city = self.repo.search_city_by_id(&id).await?;
 
-                    self.get_weather(city).await?
+                    self.get_weather(city).await
                 }
                 None => {
-                    self.not_default_message().await?;
-
                     self.set_city().await?;
+
+                    self.not_default_message().await
                 }
             },
-            _ => (),
+            _ => self.unknown_command().await,
         }
-
-        Ok(())
     }
 
     async fn process_find_city(&self) -> Result<(), BotError> {
@@ -171,15 +171,13 @@ impl UpdateProcessor {
     async fn process_number(&self) -> Result<(), BotError> {
         match self.text.parse::<usize>() {
             Ok(number) => {
-                self.pattern_response(number).await?;
                 self.return_to_initial().await?;
-            }
-            Err(_) => {
-                self.not_number_message().await?;
-            }
-        }
 
-        Ok(())
+                self.pattern_response(number).await
+            }
+
+            Err(_) => self.not_number_message().await,
+        }
     }
 
     async fn pattern_response(&self, number: usize) -> Result<(), BotError> {
@@ -191,14 +189,9 @@ impl UpdateProcessor {
         match self.chat.before_state {
             ClientState::Initial => self.get_weather(city).await,
 
-            ClientState::SetCity => {
-                self.repo
-                    .modify_default_city(&self.chat.id, self.chat.user_id, &city.id)
-                    .await?;
+            ClientState::SetCity => self.set_default_city(city).await,
 
-                self.city_updated_message().await
-            }
-            _ => Ok(()),
+            _ => self.revert_state().await,
         }
     }
 
@@ -206,7 +199,7 @@ impl UpdateProcessor {
         let vec = self.repo.get_city_by_pattern(&self.text).await?;
 
         if vec.is_empty() || vec.len() > 30 {
-            let text = format!("Your city {} was not found , try again", self.text);
+            let text = format!("Your city {} was not found", self.text);
             self.send_message(&text).await?;
 
             return Err(BotError::DbError(BotDbError::CityNotFoundError));
@@ -227,18 +220,31 @@ impl UpdateProcessor {
             i += 1;
         }
 
-        self.send_message(&text).await?;
-
-        Ok(())
+        self.send_message(&text).await
     }
 
-    async fn cancel(&self) -> Result<(), BotError> {
-        let text = "Your operation was canceled";
-        self.send_message(text).await?;
-
+    async fn cancel(&self, custom_message: Option<String>) -> Result<(), BotError> {
         self.return_to_initial().await?;
 
-        Ok(())
+        let text = match custom_message {
+            Some(message) => message,
+            None => "Your operation was canceled".to_string(),
+        };
+        self.send_message(&text).await
+    }
+
+    async fn revert_state(&self) -> Result<(), BotError> {
+        self.cancel(Some(
+            "Failed to process your command. Please try to run the command again".to_string(),
+        ))
+        .await
+    }
+
+    async fn unknown_command(&self) -> Result<(), BotError> {
+        self.cancel(Some(
+            "Unknown command. See /start for available commands".to_string(),
+        ))
+        .await
     }
 
     async fn return_to_initial(&self) -> Result<(), BotError> {
@@ -254,8 +260,6 @@ impl UpdateProcessor {
     }
 
     async fn set_city(&self) -> Result<(), BotError> {
-        self.find_city_message().await?;
-
         self.repo
             .modify_state(&self.chat.id, self.chat.user_id, ClientState::FindCity)
             .await?;
@@ -264,13 +268,14 @@ impl UpdateProcessor {
             .modify_before_state(&self.chat.id, self.chat.user_id, ClientState::SetCity)
             .await?;
 
-        Ok(())
+        self.find_city_message().await
     }
 
     async fn not_number_message(&self) -> Result<(), BotError> {
-        let text = "That's not a positive number in the range, try again";
-
-        self.send_message(text).await
+        self.cancel(Some(
+            "That's not a positive number in the range. The command was cancelled".to_string(),
+        ))
+        .await
     }
 
     async fn city_updated_message(&self) -> Result<(), BotError> {
@@ -290,9 +295,8 @@ impl UpdateProcessor {
         /find_city Ask weather info from any city worldwide.\n
         /set_default_city Set your default city.\n
         /default Provides weather info from default city.\n
-        /schedule Schedules the bot to run daily to provide weather info from default city.\n
-        It would be really greatful if you take a look my GitHub, look how much work has this bot.\n
-        If you like this bot consider giving me a star on GitHub or if you would like to self run it, fork the proyect please.\n
+        It would be really greatful if you take a look at my GitHub, look how much work I invested into this bot.\n
+        If you like this bot, consider giving me a star on GitHub or if you would like to self run it, fork the project please.\n
         <a href=\"https://github.com/pxp9/weather_bot_rust\">RustWeatherBot GitHub repo</a>";
 
         self.send_message(text).await
@@ -309,6 +313,14 @@ impl UpdateProcessor {
         );
 
         self.send_message(&text).await
+    }
+
+    async fn set_default_city(&self, city: City) -> Result<(), BotError> {
+        self.repo
+            .modify_default_city(&self.chat.id, self.chat.user_id, &city.id)
+            .await?;
+
+        self.city_updated_message().await
     }
 
     async fn not_default_message(&self) -> Result<(), BotError> {
@@ -342,14 +354,25 @@ impl ProcessUpdateTask {
 #[async_trait]
 impl AsyncRunnable for ProcessUpdateTask {
     async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), Error> {
-        let processor = UpdateProcessor::create(self.update.clone()).await.unwrap();
+        let processor = match UpdateProcessor::create(self.update.clone()).await {
+            Ok(processor) => processor,
+            Err(err) => {
+                log::error!("Failed to initialize the processor {:?}", err);
+
+                return Ok(());
+            }
+        };
 
         if let Err(error) = processor.process().await {
             log::error!(
-                "Failed to process the update {:?} - {:?}",
+                "Failed to process the update {:?} - {:?}. Reverting...",
                 self.update,
                 error
             );
+
+            if let Err(err) = processor.revert_state().await {
+                log::error!("Failed to revert: {:?}", err);
+            }
         }
 
         Ok(())
