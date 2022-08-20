@@ -121,18 +121,18 @@ impl UpdateProcessor {
             ClientState::Initial => self.process_initial().await,
             ClientState::FindCity => self.process_find_city().await,
             ClientState::Number => self.process_number().await,
-            _ => Ok(()),
+            _ => self.revert_state().await,
         }
     }
 
     async fn process_initial(&self) -> Result<(), BotError> {
         match self.command {
             Command::FindCity => {
-                self.find_city_message().await?;
-
                 self.repo
                     .modify_state(&self.chat.id, self.chat.user_id, ClientState::FindCity)
                     .await?;
+
+                self.find_city_message().await?;
 
                 Ok(())
             }
@@ -145,9 +145,9 @@ impl UpdateProcessor {
                     self.get_weather(city).await
                 }
                 None => {
-                    self.not_default_message().await?;
+                    self.set_city().await?;
 
-                    self.set_city().await
+                    self.not_default_message().await
                 }
             },
             _ => self.unknown_command().await,
@@ -171,9 +171,9 @@ impl UpdateProcessor {
     async fn process_number(&self) -> Result<(), BotError> {
         match self.text.parse::<usize>() {
             Ok(number) => {
-                self.pattern_response(number).await?;
+                self.return_to_initial().await?;
 
-                self.return_to_initial().await
+                self.pattern_response(number).await
             }
 
             Err(_) => self.not_number_message().await,
@@ -191,7 +191,7 @@ impl UpdateProcessor {
 
             ClientState::SetCity => self.set_default_city(city).await,
 
-            _ => Ok(()),
+            _ => self.revert_state().await,
         }
     }
 
@@ -224,12 +224,13 @@ impl UpdateProcessor {
     }
 
     async fn cancel(&self, custom_message: Option<String>) -> Result<(), BotError> {
+        self.return_to_initial().await?;
+
         let text = match custom_message {
             Some(message) => message,
             None => "Your operation was canceled".to_string(),
         };
-        self.send_message(&text).await?;
-        self.return_to_initial().await
+        self.send_message(&text).await
     }
 
     async fn revert_state(&self) -> Result<(), BotError> {
@@ -259,8 +260,6 @@ impl UpdateProcessor {
     }
 
     async fn set_city(&self) -> Result<(), BotError> {
-        self.find_city_message().await?;
-
         self.repo
             .modify_state(&self.chat.id, self.chat.user_id, ClientState::FindCity)
             .await?;
@@ -269,13 +268,14 @@ impl UpdateProcessor {
             .modify_before_state(&self.chat.id, self.chat.user_id, ClientState::SetCity)
             .await?;
 
-        Ok(())
+        self.find_city_message().await
     }
 
     async fn not_number_message(&self) -> Result<(), BotError> {
-        let text = "That's not a positive number in the range";
-
-        self.send_message(text).await
+        self.cancel(Some(
+            "That's not a positive number in the range. The command was cancelled".to_string(),
+        ))
+        .await
     }
 
     async fn city_updated_message(&self) -> Result<(), BotError> {
