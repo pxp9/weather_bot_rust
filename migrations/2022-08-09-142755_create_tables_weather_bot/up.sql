@@ -4,6 +4,9 @@
 
 CREATE TYPE client_state AS ENUM ('initial', 'set_city', 'find_city' , 'number');
 
+-- for trigram index
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 
 CREATE TABLE cities (
   id SERIAL,
@@ -15,6 +18,9 @@ CREATE TABLE cities (
   UNIQUE(name, country, state),
   PRIMARY KEY (id)
 );
+
+CREATE INDEX cities_name_trgm_idx ON cities USING gin (name gin_trgm_ops);
+
 
 CREATE TABLE chats (
   id BIGINT,

@@ -282,9 +282,9 @@ impl Repo {
     pub async fn get_city_by_pattern(&self, pattern: &str) -> Result<Vec<Row>, BotDbError> {
         let connection = self.pool.get().await?;
 
-        let st = format!("%{}%", pattern.to_uppercase());
+        let pattern = format!("%{}%", pattern.to_uppercase());
 
-        let vec = connection.query(GET_CITY_BY_PATTERN, &[&st]).await?;
+        let vec = connection.query(GET_CITY_BY_PATTERN, &[&pattern]).await?;
         Ok(vec)
     }
 
