@@ -92,7 +92,9 @@ jobs:
           args: --release --verbose --all-features --target x86_64-unknown-linux-gnu
 
   build-container:
+    name: Build and Push image to DockerHub.
     runs-on: ubuntu-latest
+    needs: test
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -108,5 +110,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: latest
-          labels: pxp9/weather_bot_rust
+          tags: pxp9/weather_bot_rust:latest
