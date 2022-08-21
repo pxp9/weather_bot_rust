@@ -90,3 +90,23 @@ jobs:
         with:
           command: build
           args: --release --verbose --all-features --target x86_64-unknown-linux-gnu
+
+  build-container:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: latest
+          labels: pxp9/weather_bot_rust
