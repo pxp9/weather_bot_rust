@@ -76,8 +76,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-        with:
-        fetch-depth: 0
+          with:
+            fetch-depth: 0
 
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
