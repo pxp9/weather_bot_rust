@@ -99,7 +99,10 @@ jobs:
         with:
           node-version: 'lts/*'
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm install @semantic-release/semantic-release -D
+          npm install @semantic-release/git -D
+          npm install @semantic-release/changelog -D
       
       - name: Version release
         env:
