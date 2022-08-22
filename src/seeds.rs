@@ -29,9 +29,7 @@ pub async fn insert_seeds() -> Result<(), BotDbError> {
         // For each city check if it is in db, if not is in db, insert the city
         log::info!("Inserting cities");
         for city in cities {
-            if let Err(err) = repo.insert_city(city.clone()).await {
-                log::error!("Failed to insert a city {:?} -  {:?}", city, err);
-            }
+            repo.insert_city(city).await?;
         }
 
         log::info!("Cities are in database");
