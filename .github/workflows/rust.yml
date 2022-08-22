@@ -100,7 +100,7 @@ jobs:
           node-version: 'lts/*'
       - name: Install dependencies
         run: |
-          npm install @semantic-release/semantic-release -D
+          npm install  npm install --save-dev semantic-release
           npm install @semantic-release/git -D
           npm install @semantic-release/changelog -D
       
