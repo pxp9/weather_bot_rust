@@ -94,6 +94,7 @@ jobs:
           command: build
           args: --release --verbose --all-features --target x86_64-unknown-linux-gnu
       
+    # Please work stupid workflow xd
       - name: Setup Node.js for Release
         uses: actions/setup-node@v3
         with:
