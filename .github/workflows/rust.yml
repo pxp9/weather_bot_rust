@@ -95,7 +95,7 @@ jobs:
           args: --release --verbose --all-features --target x86_64-unknown-linux-gnu
       
       - name: Setup Node.js for Release
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: 'lts/*'
       - name: Install dependencies
