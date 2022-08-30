@@ -97,4 +97,20 @@ impl ApiClient {
             .send_message(&send_message_params)
             .await
     }
+
+    pub async fn send_message_without_reply(
+        &self,
+        chat_id: i64,
+        text: String,
+    ) -> Result<MethodResponse<Message>, Error> {
+        let send_message_params = SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(text)
+            .parse_mode(ParseMode::Html)
+            .build();
+
+        self.telegram_client
+            .send_message(&send_message_params)
+            .await
+    }
 }

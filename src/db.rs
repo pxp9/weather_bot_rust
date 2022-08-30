@@ -50,6 +50,10 @@ pub enum ClientState {
     Number,
     #[postgres(name = "set_city")]
     SetCity,
+    #[postgres(name = "time")]
+    Time,
+    #[postgres(name = "offset")]
+    Offset,
 }
 
 #[derive(Debug, Clone)]

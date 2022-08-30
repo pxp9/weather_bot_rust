@@ -13,6 +13,7 @@ use fang::serde::Deserialize;
 use fang::serde::Serialize;
 use fang::typetag;
 use fang::AsyncRunnable;
+use fang::Scheduled;
 use frankenstein::Update;
 use frankenstein::UpdateContent;
 use std::fmt::Write;
@@ -35,6 +36,7 @@ pub enum Command {
     SetDefaultCity,
     Start,
     Cancel,
+    Schedule,
     UnknownCommand(String),
 }
 
@@ -61,6 +63,7 @@ impl FromStr for Command {
             "/default" => Command::Default,
             "/set_default_city" => Command::SetDefaultCity,
             "/cancel" => Command::Cancel,
+            "/schedule" => Command::Schedule,
             _ => Command::UnknownCommand(command_str.to_string()),
         };
 
@@ -110,18 +113,36 @@ impl UpdateProcessor {
         }
     }
 
-    pub async fn process(&self) -> Result<(), BotError> {
+    pub async fn process(&self) -> Result<Option<ScheduleWeatherTask>, BotError> {
         self.send_typing().await?;
 
         if Command::Cancel == self.command {
-            return self.cancel(None).await;
+            self.cancel(None).await?;
+            return Ok(None);
         }
 
         match self.chat.state {
-            ClientState::Initial => self.process_initial().await,
-            ClientState::FindCity => self.process_find_city().await,
-            ClientState::Number => self.process_number().await,
-            _ => self.revert_state().await,
+            ClientState::Initial => {
+                self.process_initial().await?;
+                Ok(None)
+            }
+            ClientState::FindCity => {
+                self.process_find_city().await?;
+                Ok(None)
+            }
+            ClientState::Number => {
+                self.process_number().await?;
+                Ok(None)
+            }
+            ClientState::Time => {
+                self.process_time().await?;
+                Ok(None)
+            }
+            ClientState::Offset => self.process_offset().await,
+            _ => {
+                self.revert_state().await?;
+                Ok(None)
+            }
         }
     }
 
@@ -150,6 +171,7 @@ impl UpdateProcessor {
                     self.not_default_message().await
                 }
             },
+            Command::Schedule => self.schedule_weather().await,
             _ => self.unknown_command().await,
         }
     }
@@ -178,6 +200,120 @@ impl UpdateProcessor {
 
             Err(_) => self.not_number_message().await,
         }
+    }
+
+    async fn not_valid_offset_message(&self) -> Result<Option<ScheduleWeatherTask>, BotError> {
+        self.cancel(Some(
+            "That's not a valid offset, it has to be a number in range [-11, 12].\n
+            If your timezone is UTC + 2 put 2, if you have UTC - 10 put -10, 0 if you have UTC timezone.\n
+            The command was cancelled"
+            .to_string(),
+        ))
+        .await?;
+
+        Ok(None)
+    }
+
+    async fn process_offset(&self) -> Result<Option<ScheduleWeatherTask>, BotError> {
+        match self.text.parse::<i8>() {
+            Ok(number) => {
+                if number > 12 || number < -11 {
+                    return self.not_valid_offset_message().await;
+                }
+
+                if let None = self.chat.default_city_id {
+                    self.cancel(Some(
+                        "To use /schedule command default city must be set first.".to_string(),
+                    ))
+                    .await?;
+
+                    return Ok(None);
+                }
+
+                let offset = number;
+                // we have hour and minutes well formatted stored in selected see in process_time func.
+                let vec: Vec<&str> = self.chat.selected.as_ref().unwrap().split(":").collect();
+                // This unwraps are safe because we know that is stored in the correct format.
+                let user_hour = vec[0].parse::<i8>().unwrap();
+                let minutes = vec[1].parse::<i8>().unwrap();
+
+                let schedule_weather_task = ScheduleWeatherTask::builder()
+                    .user_hour(user_hour)
+                    .minutes(minutes)
+                    .offset(offset)
+                    .username(self.username.clone())
+                    .chat_id(self.chat.id)
+                    .default_city_id(self.chat.default_city_id.unwrap())
+                    .build();
+
+                self.return_to_initial().await?;
+
+                let text = format!(
+                    "Weather info scheduled every day at {}:{} UTC {}",
+                    vec[0], vec[1], offset
+                );
+
+                self.send_message(&text).await?;
+
+                Ok(Some(schedule_weather_task))
+            }
+
+            Err(_) => self.not_valid_offset_message().await,
+        }
+    }
+
+    async fn not_hour_message(&self) -> Result<(), BotError> {
+        self.cancel(Some(
+            "That's not a well formatted hour, it has to be formatted with this format `hour:minutes` being hour a number in range [0,23] 
+            and minutes a number in range [0,59]. The command was cancelled"
+            .to_string(),
+        ))
+        .await
+    }
+
+    fn parse_time(hour_or_minutes: &str, max_range: i32, min_range: i32) -> i32 {
+        match hour_or_minutes.parse::<i32>() {
+            Ok(number) => {
+                if number > max_range || number < min_range {
+                    -1
+                } else {
+                    number
+                }
+            }
+            Err(_) => -1,
+        }
+    }
+
+    async fn process_time(&self) -> Result<(), BotError> {
+        let vec: Vec<&str> = self.text.trim().split(":").collect();
+
+        if vec.len() != 2 {
+            return self.not_hour_message().await;
+        }
+
+        let hour = match Self::parse_time(vec[0], 23, 0) {
+            -1 => {
+                return self.not_hour_message().await;
+            }
+            number => number,
+        };
+
+        let minutes = match Self::parse_time(vec[1], 59, 0) {
+            -1 => {
+                return self.not_hour_message().await;
+            }
+            number => number,
+        };
+
+        self.repo
+            .modify_selected(
+                &self.chat.id,
+                self.chat.user_id,
+                format!("{}:{}", hour, minutes),
+            )
+            .await?;
+
+        Ok(())
     }
 
     async fn pattern_response(&self, number: usize) -> Result<(), BotError> {
@@ -257,6 +393,22 @@ impl UpdateProcessor {
             .await?;
 
         Ok(())
+    }
+
+    async fn schedule_weather_message(&self) -> Result<(), BotError> {
+        let text =
+            "what time would you like to schedule ? (format hour:minutes in range 0-23:0-59)";
+
+        self.send_message(text).await
+    }
+
+    async fn schedule_weather(&self) -> Result<(), BotError> {
+        //asking time
+        self.repo
+            .modify_state(&self.chat.id, self.chat.user_id, ClientState::Time)
+            .await?;
+
+        self.schedule_weather_message().await
     }
 
     async fn set_city(&self) -> Result<(), BotError> {
@@ -344,6 +496,68 @@ impl UpdateProcessor {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, TypedBuilder, Eq, PartialEq, Clone)]
+#[serde(crate = "fang::serde")]
+pub struct ScheduleWeatherTask {
+    user_hour: i8,
+    minutes: i8,
+    offset: i8,
+    username: String,
+    chat_id: i64,
+    default_city_id: i32,
+}
+
+#[typetag::serde]
+#[async_trait]
+impl AsyncRunnable for ScheduleWeatherTask {
+    async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), Error> {
+        // here we should program the weather_info deliver
+        let repo = Repo::repo().await.unwrap();
+        let api = ApiClient::api_client().await;
+
+        let city = repo.search_city_by_id(&self.default_city_id).await.unwrap();
+
+        let weather_client = WeatherApiClient::weather_client().await;
+
+        let weather_info = weather_client
+            .fetch(city.coord.lat, city.coord.lon)
+            .await
+            .unwrap();
+
+        let text = format!(
+            "Hi {} !, this is your scheduled weather info.\n\n {},{}\nLat {} , Lon {}\n{}",
+            self.username, city.name, city.country, city.coord.lat, city.coord.lon, weather_info,
+        );
+
+        api.send_message_without_reply(self.chat_id, text)
+            .await
+            .unwrap();
+
+        Ok(())
+    }
+
+    fn uniq(&self) -> bool {
+        true
+    }
+
+    fn task_type(&self) -> String {
+        TASK_TYPE.to_string()
+    }
+
+    fn cron(&self) -> Option<Scheduled> {
+        let hour_utc = if self.user_hour - self.offset < 0 {
+            self.user_hour - self.offset + 24
+        } else {
+            self.user_hour - self.offset
+        };
+
+        Some(Scheduled::CronPattern(format!(
+            "0 {} {} * * * *",
+            self.minutes, hour_utc
+        )))
+    }
+}
+
 impl ProcessUpdateTask {
     pub fn new(update: Update) -> Self {
         Self { update }
@@ -353,7 +567,7 @@ impl ProcessUpdateTask {
 #[typetag::serde]
 #[async_trait]
 impl AsyncRunnable for ProcessUpdateTask {
-    async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), Error> {
+    async fn run(&self, queueable: &mut dyn AsyncQueueable) -> Result<(), Error> {
         let processor = match UpdateProcessor::create(self.update.clone()).await {
             Ok(processor) => processor,
             Err(err) => {
@@ -362,16 +576,22 @@ impl AsyncRunnable for ProcessUpdateTask {
                 return Ok(());
             }
         };
-
-        if let Err(error) = processor.process().await {
+        let result = processor.process().await;
+        if let Err(error) = result {
             log::error!(
                 "Failed to process the update {:?} - {:?}. Reverting...",
                 self.update,
                 error
             );
 
-            if let Err(err) = processor.revert_state().await {
+            let result = processor.revert_state().await;
+
+            if let Err(err) = result {
                 log::error!("Failed to revert: {:?}", err);
+            }
+        } else {
+            if let Some(schedule_task) = result.unwrap() {
+                queueable.schedule_task(&schedule_task).await?;
             }
         }
 
