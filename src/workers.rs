@@ -12,7 +12,6 @@ pub async fn start_workers() {
     let mut queue: AsyncQueue<NoTls> = AsyncQueue::builder()
         .uri(DATABASE_URL.clone())
         .max_pool_size(NUMBER_OF_WORKERS)
-        .duplicated_tasks(true)
         .build();
 
     queue.connect(NoTls).await.unwrap();
