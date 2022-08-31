@@ -262,9 +262,9 @@ impl UpdateProcessor {
         }
     }
 
-    async fn not_hour_message(&self) -> Result<(), BotError> {
+    async fn not_time_message(&self) -> Result<(), BotError> {
         self.cancel(Some(
-            "That's not a well formatted hour, it has to be formatted with this format `hour:minutes` being hour a number in range [0,23] 
+            "That's not a well formatted time, it has to be formatted with this format `hour:minutes` being hour a number in range [0,23] 
             and minutes a number in range [0,59]. The command was cancelled"
             .to_string(),
         ))
@@ -288,20 +288,16 @@ impl UpdateProcessor {
         let vec: Vec<&str> = self.text.trim().split(':').collect();
 
         if vec.len() != 2 {
-            return self.not_hour_message().await;
+            return self.not_time_message().await;
         }
 
         let hour = match Self::parse_time(vec[0], 23, 0) {
-            -1 => {
-                return self.not_hour_message().await;
-            }
+            -1 => return self.not_time_message().await,
             number => number,
         };
 
         let minutes = match Self::parse_time(vec[1], 59, 0) {
-            -1 => {
-                return self.not_hour_message().await;
-            }
+            -1 => return self.not_time_message().await,
             number => number,
         };
 
@@ -318,7 +314,7 @@ impl UpdateProcessor {
             .await?;
 
         let text = "Do you have any offset respect UTC ?\n 
-            (0 if your hour is the same as UTC, 2 if UTC + 2 , -2 if UTC - 2, [-11,12])";
+            (0 if your timezone is the same as UTC, 2 if UTC + 2 , -2 if UTC - 2, [-11,12])";
 
         self.send_message(text).await?;
 
