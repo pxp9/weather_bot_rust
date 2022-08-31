@@ -217,11 +217,11 @@ impl UpdateProcessor {
     async fn process_offset(&self) -> Result<Option<ScheduleWeatherTask>, BotError> {
         match self.text.parse::<i8>() {
             Ok(number) => {
-                if number > 12 || number < -11 {
+                if !(-11..=12).contains(&number) {
                     return self.not_valid_offset_message().await;
                 }
 
-                if let None = self.chat.default_city_id {
+                if self.chat.default_city_id.is_none() {
                     self.cancel(Some(
                         "To use /schedule command default city must be set first.".to_string(),
                     ))
@@ -232,7 +232,7 @@ impl UpdateProcessor {
 
                 let offset = number;
                 // we have hour and minutes well formatted stored in selected see in process_time func.
-                let vec: Vec<&str> = self.chat.selected.as_ref().unwrap().split(":").collect();
+                let vec: Vec<&str> = self.chat.selected.as_ref().unwrap().split(':').collect();
                 // This unwraps are safe because we know that is stored in the correct format.
                 let user_hour = vec[0].parse::<i8>().unwrap();
                 let minutes = vec[1].parse::<i8>().unwrap();
@@ -274,7 +274,7 @@ impl UpdateProcessor {
     fn parse_time(hour_or_minutes: &str, max_range: i32, min_range: i32) -> i32 {
         match hour_or_minutes.parse::<i32>() {
             Ok(number) => {
-                if number > max_range || number < min_range {
+                if !(min_range..=max_range).contains(&number) {
                     -1
                 } else {
                     number
@@ -285,7 +285,7 @@ impl UpdateProcessor {
     }
 
     async fn process_time(&self) -> Result<(), BotError> {
-        let vec: Vec<&str> = self.text.trim().split(":").collect();
+        let vec: Vec<&str> = self.text.trim().split(':').collect();
 
         if vec.len() != 2 {
             return self.not_hour_message().await;
@@ -312,6 +312,15 @@ impl UpdateProcessor {
                 format!("{}:{}", hour, minutes),
             )
             .await?;
+
+        self.repo
+            .modify_state(&self.chat.id, self.chat.user_id, ClientState::Offset)
+            .await?;
+
+        let text = "Do you have any offset respect UTC ?\n 
+            (0 if your hour is the same as UTC, 2 if UTC + 2 , -2 if UTC - 2, [-11,12])";
+
+        self.send_message(text).await?;
 
         Ok(())
     }
@@ -589,10 +598,8 @@ impl AsyncRunnable for ProcessUpdateTask {
             if let Err(err) = result {
                 log::error!("Failed to revert: {:?}", err);
             }
-        } else {
-            if let Some(schedule_task) = result.unwrap() {
-                queueable.schedule_task(&schedule_task).await?;
-            }
+        } else if let Some(schedule_task) = result.unwrap() {
+            queueable.schedule_task(&schedule_task).await?;
         }
 
         Ok(())
