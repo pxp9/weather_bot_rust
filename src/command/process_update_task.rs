@@ -221,15 +221,6 @@ impl UpdateProcessor {
                     return self.not_valid_offset_message().await;
                 }
 
-                if self.chat.default_city_id.is_none() {
-                    self.cancel(Some(
-                        "To use /schedule command default city must be set first.".to_string(),
-                    ))
-                    .await?;
-
-                    return Ok(None);
-                }
-
                 let offset = number;
                 // we have hour and minutes well formatted stored in selected see in process_time func.
                 let vec: Vec<&str> = self.chat.selected.as_ref().unwrap().split(':').collect();
@@ -243,6 +234,7 @@ impl UpdateProcessor {
                     .offset(offset)
                     .username(self.username.clone())
                     .chat_id(self.chat.id)
+                    // Safe unwrap checked in process_time func.
                     .default_city_id(self.chat.default_city_id.unwrap())
                     .build();
 
@@ -285,6 +277,15 @@ impl UpdateProcessor {
     }
 
     async fn process_time(&self) -> Result<(), BotError> {
+        // check if user has default city.
+        if self.chat.default_city_id.is_none() {
+            return self
+                .cancel(Some(
+                    "To use /schedule command default city must be set first.".to_string(),
+                ))
+                .await;
+        }
+
         let vec: Vec<&str> = self.text.trim().split(':').collect();
 
         if vec.len() != 2 {
@@ -340,9 +341,12 @@ impl UpdateProcessor {
         let vec = self.repo.get_city_by_pattern(&self.text).await?;
 
         if vec.is_empty() || vec.len() > 30 {
-            let text = format!("Your city {} was not found", self.text);
+            let text = format!("Your city {} was not found. Command cancelled.", self.text);
             self.send_message(&text).await?;
 
+            // User state will get reverted after return this error.
+            // Also will prompt an Error log in server. I will consider here,
+            // delete this error and just call cancel func.
             return Err(BotError::DbError(BotDbError::CityNotFoundError));
         }
 
@@ -375,10 +379,7 @@ impl UpdateProcessor {
     }
 
     async fn revert_state(&self) -> Result<(), BotError> {
-        self.cancel(Some(
-            "Failed to process your command. Please try to run the command again".to_string(),
-        ))
-        .await
+        self.cancel(None).await
     }
 
     async fn unknown_command(&self) -> Result<(), BotError> {
