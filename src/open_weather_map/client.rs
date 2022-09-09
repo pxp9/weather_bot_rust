@@ -43,6 +43,35 @@ impl WeatherApiClient {
         Self::decode_response(response)
     }
 
+    #[cfg(test)]
+    pub async fn fetch_weekly(&self, lat: f64, lon: f64) -> Result<(), ClientError> {
+        let request_url = format!(
+            "https://api.openweathermap.org/data/2.5/forecast?lat={}&lon={}&appid={}&units={}&lang={}",
+            lat,
+            lon,
+            OPEN_WEATHER_MAP_API_TOKEN.as_str(),
+            UNITS,
+            LANG
+        );
+
+        let mut response = self.client.get(&request_url).send()?;
+
+        println!("{:?}", response.text()?);
+        //Self::decode_weekly_response(response)
+        Ok(())
+    }
+    #[cfg(test)]
+    pub fn decode_weekly_response(mut response: reqwest::Response) -> Result<Weather, ClientError> {
+        let status_code = response.status().as_u16();
+        let string_response = response.text()?;
+
+        if status_code == 200 {
+            let json_result: Weather = serde_json::from_str(&string_response)?;
+            return Ok(json_result);
+        };
+
+        Err(ClientError::StatusCodeError((status_code, string_response)))
+    }
     pub fn decode_response(mut response: reqwest::Response) -> Result<Weather, ClientError> {
         let status_code = response.status().as_u16();
         let string_response = response.text()?;
@@ -53,5 +82,17 @@ impl WeatherApiClient {
         };
 
         Err(ClientError::StatusCodeError((status_code, string_response)))
+    }
+}
+
+mod tests {
+
+    #[tokio::test]
+    async fn fetch_weekly() {
+        let weather_client = super::WeatherApiClient::weather_client().await;
+        weather_client
+            .fetch_weekly(-3.70256, 40.4165)
+            .await
+            .unwrap();
     }
 }

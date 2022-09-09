@@ -8,11 +8,11 @@ use crate::telegram::client::ApiClient;
 use crate::BotError;
 use fang::async_trait;
 use fang::asynk::async_queue::AsyncQueueable;
-use fang::asynk::AsyncError as Error;
 use fang::serde::Deserialize;
 use fang::serde::Serialize;
 use fang::typetag;
 use fang::AsyncRunnable;
+use fang::FangError;
 use fang::Scheduled;
 use frankenstein::Update;
 use frankenstein::UpdateContent;
@@ -516,7 +516,7 @@ pub struct ScheduleWeatherTask {
 #[typetag::serde]
 #[async_trait]
 impl AsyncRunnable for ScheduleWeatherTask {
-    async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), Error> {
+    async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
         // here we should program the weather_info deliver
         let repo = Repo::repo().await.unwrap();
         let api = ApiClient::api_client().await;
@@ -573,7 +573,7 @@ impl ProcessUpdateTask {
 #[typetag::serde]
 #[async_trait]
 impl AsyncRunnable for ProcessUpdateTask {
-    async fn run(&self, queueable: &mut dyn AsyncQueueable) -> Result<(), Error> {
+    async fn run(&self, queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
         let processor = match UpdateProcessor::create(self.update.clone()).await {
             Ok(processor) => processor,
             Err(err) => {

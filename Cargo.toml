@@ -17,5 +17,5 @@ thiserror = "1.0"
 lazy_static = "1.4.0"
 log = "0.4"
 pretty_env_logger = "0.4"
-fang = { git = "https://github.com/ayrat555/fang", features = ["asynk"], default-features = false, branch="ayrat555/change-schema" }
+fang = { version = "0.9" , features = ["asynk"], default-features = false }
 typed-builder = "0.10"

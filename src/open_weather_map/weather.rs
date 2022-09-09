@@ -3,6 +3,41 @@ use std::fmt;
 use typed_builder::TypedBuilder;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WeatherForecast {
+    pub dt: i64,
+    pub cod: u32,
+    pub list: Vec<Forecast>
+    pub city: City,
+    pub sunrise: i64,
+    pub sunset: i64,
+
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Forecast {
+    pub main: Main,
+    pub weather: Vec<WeatherInfo>,
+    pub clouds: Clouds,
+    pub pop: f32, // probability of precipitation 0-1 multiply by 100 to get percent
+    pub wind: Wind,
+    pub visibility: u32,
+    pub rain: Rain,
+    pub snow: Snow,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Rain {
+    #[serde(rename = "3h")]
+    pub three_hour_volume: f32,     
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Snow {
+    #[serde(rename = "3h")]
+    pub three_hour_volume: f32,     
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Weather {
     pub coord: Coord,
     pub weather: Vec<WeatherInfo>,

@@ -474,8 +474,9 @@ checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
 
 [[package]]
 name = "fang"
-version = "0.8.0"
-source = "git+https://github.com/ayrat555/fang?branch=ayrat555/change-schema#91f2fdf330b7c1cb6b97b77bf98a1f2218832f71"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce8f91276e489083d0fb9b279c90731d26d4bf2e4b344c7c78e01e10f3053d1b"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -493,7 +494,7 @@ dependencies = [
  "tokio 1.20.1",
  "typed-builder",
  "typetag",
- "uuid 0.8.2",
+ "uuid 1.1.2",
 ]
 
 [[package]]
@@ -1491,7 +1492,7 @@ dependencies = [
  "postgres-protocol",
  "serde",
  "serde_json",
- "uuid 0.8.2",
+ "uuid 1.1.2",
 ]
 
 [[package]]
@@ -2525,9 +2526,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "0.8.2"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+checksum = "dd6469f4314d5f1ffec476e05f17cc9a78bc7a27a6a857842170bdf8d6f98d2f"
 dependencies = [
  "getrandom",
 ]
