@@ -4,13 +4,8 @@ use typed_builder::TypedBuilder;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WeatherForecast {
-    pub dt: i64,
-    pub cod: u32,
-    pub list: Vec<Forecast>
-    pub city: City,
-    pub sunrise: i64,
-    pub sunset: i64,
-
+    pub cod: String,
+    pub list: Vec<Forecast>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -21,20 +16,43 @@ pub struct Forecast {
     pub pop: f32, // probability of precipitation 0-1 multiply by 100 to get percent
     pub wind: Wind,
     pub visibility: u32,
-    pub rain: Rain,
-    pub snow: Snow,
+    pub dt_txt: String,
+    #[serde(default)]
+    pub rain: Option<Rain>,
+    #[serde(default)]
+    pub snow: Option<Snow>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Rain {
-    #[serde(rename = "3h")]
-    pub three_hour_volume: f32,     
+impl fmt::Display for Forecast {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut weather_desc: &str = "";
+        if !self.weather.is_empty() {
+            weather_desc = &self.weather[0].description;
+        }
+        let temp = self.main.temp;
+        let temp_min = self.main.temp_min;
+        let temp_max = self.main.temp_max;
+        let pressure = self.main.pressure;
+        let humidity = self.main.humidity;
+        let pop = self.pop * 100.0;
+	let dt = self.dt_txt.clone();
+
+        let st: String = format!(
+        "\n\n==================== {} ===================\n\n🌍🌍 Weather: {}\n🌡️🌡️ Mean Temperature: {} ºC\n🧊🧊 Minimum temperature: {} ºC\n🔥🔥 Maximum temperature: {} ºC\n⛰️⛰️ Pressure: {} hPa\n💧💧 Humidity: {} %\n Rain probability: {} %",
+        dt, weather_desc, temp, temp_min, temp_max, pressure, humidity, pop
+	);
+
+        write!(f, "{}", st)
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Snow {
-    #[serde(rename = "3h")]
-    pub three_hour_volume: f32,     
+impl fmt::Display for WeatherForecast {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for forecast in &self.list {
+            write!(f, "{}", forecast)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -72,6 +90,18 @@ impl fmt::Display for Weather {
 
         write!(f, "{}", st)
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Rain {
+    #[serde(rename = "3h")]
+    pub three_hour_volume: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Snow {
+    #[serde(rename = "3h")]
+    pub three_hour_volume: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TypedBuilder)]
