@@ -130,19 +130,23 @@ impl UpdateProcessor {
                 self.process_find_city().await?;
                 Ok(None)
             }
-            ClientState::Number => {
-                self.process_number().await?;
+            ClientState::SetCity => {
+                self.process_set_city().await?;
                 Ok(None)
             }
             ClientState::Time => {
                 self.process_time().await?;
                 Ok(None)
             }
-            ClientState::Offset => self.process_offset().await,
-            _ => {
-                self.revert_state().await?;
+            ClientState::FindCityNumber => {
+                self.process_find_city_number().await?;
                 Ok(None)
             }
+            ClientState::SetCityNumber => {
+                self.process_set_city_number().await?;
+                Ok(None)
+            }
+            ClientState::Offset => self.process_offset().await,
         }
     }
 
@@ -184,18 +188,58 @@ impl UpdateProcessor {
             .await?;
 
         self.repo
-            .modify_state(&self.chat.id, self.chat.user_id, ClientState::Number)
+            .modify_state(
+                &self.chat.id,
+                self.chat.user_id,
+                ClientState::FindCityNumber,
+            )
             .await?;
 
         Ok(())
     }
 
-    async fn process_number(&self) -> Result<(), BotError> {
+    async fn process_set_city(&self) -> Result<(), BotError> {
+        self.find_city().await?;
+
+        self.repo
+            .modify_selected(&self.chat.id, self.chat.user_id, self.text.clone())
+            .await?;
+
+        self.repo
+            .modify_state(&self.chat.id, self.chat.user_id, ClientState::SetCityNumber)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn process_find_city_number(&self) -> Result<(), BotError> {
         match self.text.parse::<usize>() {
             Ok(number) => {
+                let city = self
+                    .repo
+                    .get_city_row(&self.chat.selected.clone().unwrap(), number)
+                    .await?;
+
                 self.return_to_initial().await?;
 
-                self.pattern_response(number).await
+                self.get_weather(city).await
+            }
+
+            Err(_) => self.not_number_message().await,
+        }
+    }
+
+    async fn process_set_city_number(&self) -> Result<(), BotError> {
+        match self.text.parse::<usize>() {
+            Ok(number) => {
+                let city = self
+                    .repo
+                    .get_city_row(&self.chat.selected.clone().unwrap(), number)
+                    .await?;
+
+                self.return_to_initial().await?;
+
+                self.set_default_city(city).await
             }
 
             Err(_) => self.not_number_message().await,
@@ -328,21 +372,6 @@ impl UpdateProcessor {
         Ok(())
     }
 
-    async fn pattern_response(&self, number: usize) -> Result<(), BotError> {
-        let city = self
-            .repo
-            .get_city_row(&self.chat.selected.clone().unwrap(), number)
-            .await?;
-
-        match self.chat.before_state {
-            ClientState::Initial => self.get_weather(city).await,
-
-            ClientState::SetCity => self.set_default_city(city).await,
-
-            _ => self.revert_state().await,
-        }
-    }
-
     async fn find_city(&self) -> Result<(), BotError> {
         let vec = self.repo.get_city_by_pattern(&self.text).await?;
 
@@ -397,10 +426,6 @@ impl UpdateProcessor {
 
     async fn return_to_initial(&self) -> Result<(), BotError> {
         self.repo
-            .modify_before_state(&self.chat.id, self.chat.user_id, ClientState::Initial)
-            .await?;
-
-        self.repo
             .modify_state(&self.chat.id, self.chat.user_id, ClientState::Initial)
             .await?;
 
@@ -425,11 +450,7 @@ impl UpdateProcessor {
 
     async fn set_city(&self) -> Result<(), BotError> {
         self.repo
-            .modify_state(&self.chat.id, self.chat.user_id, ClientState::FindCity)
-            .await?;
-
-        self.repo
-            .modify_before_state(&self.chat.id, self.chat.user_id, ClientState::SetCity)
+            .modify_state(&self.chat.id, self.chat.user_id, ClientState::SetCity)
             .await?;
 
         self.find_city_message().await

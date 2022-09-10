@@ -22,7 +22,6 @@ const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
 const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
 const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
-const MODIFY_BEFORE_STATE: &str = include_str!("queries/modify_before_state.sql");
 const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
 const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
@@ -46,8 +45,10 @@ pub enum ClientState {
     Initial,
     #[postgres(name = "find_city")]
     FindCity,
-    #[postgres(name = "number")]
-    Number,
+    #[postgres(name = "find_city_number")]
+    FindCityNumber,
+    #[postgres(name = "set_city_number")]
+    SetCityNumber,
     #[postgres(name = "set_city")]
     SetCity,
     #[postgres(name = "time")]
@@ -66,7 +67,6 @@ pub struct Chat {
     pub id: i64,
     pub user_id: u64,
     pub state: ClientState,
-    pub before_state: ClientState,
     pub selected: Option<String>,
     pub default_city_id: Option<i32>,
 }
@@ -178,7 +178,6 @@ impl Repo {
             .id(row.get("id"))
             .user_id(user_id)
             .state(row.get("state"))
-            .before_state(row.get("before_state"))
             .selected(row.try_get("selected").ok())
             .default_city_id(row.try_get("default_city_id").ok())
             .build();
@@ -192,15 +191,7 @@ impl Repo {
         let bytes = user_id.to_le_bytes().to_vec();
 
         let n = connection
-            .execute(
-                INSERT_CLIENT,
-                &[
-                    chat_id,
-                    &ClientState::Initial,
-                    &ClientState::Initial,
-                    &bytes,
-                ],
-            )
+            .execute(INSERT_CLIENT, &[chat_id, &ClientState::Initial, &bytes])
             .await?;
         Ok(n)
     }
@@ -229,23 +220,6 @@ impl Repo {
         let n = connection
             .execute(MODIFY_STATE, &[&new_state, chat_id, &bytes])
             .await?;
-        Ok(n)
-    }
-
-    pub async fn modify_before_state(
-        &self,
-        chat_id: &i64,
-        user_id: u64,
-        new_state: ClientState,
-    ) -> Result<u64, BotDbError> {
-        let connection = self.pool.get().await?;
-
-        let bytes = user_id.to_le_bytes().to_vec();
-
-        let n = connection
-            .execute(MODIFY_BEFORE_STATE, &[&new_state, chat_id, &bytes])
-            .await?;
-
         Ok(n)
     }
 

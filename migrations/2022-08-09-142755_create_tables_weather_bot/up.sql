@@ -2,7 +2,7 @@
 
 -- WEATHER BOT TABLES
 
-CREATE TYPE client_state AS ENUM ('initial', 'set_city', 'find_city' , 'number', 'time', 'offset');
+CREATE TYPE client_state AS ENUM ('initial', 'set_city', 'find_city' , 'find_city_number' , 'set_city_number', 'time', 'offset');
 
 -- for trigram index
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -26,7 +26,6 @@ CREATE TABLE chats (
   id BIGINT,
   user_id BYTEA,
   state client_state DEFAULT 'initial' NOT NULL, -- Initial
-  before_state client_state DEFAULT 'initial' NOT NULL, -- Initial
   selected VARCHAR(80),
   default_city_id INT,
   PRIMARY KEY (id, user_id),
