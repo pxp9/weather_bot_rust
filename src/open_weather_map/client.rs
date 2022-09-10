@@ -44,35 +44,36 @@ impl WeatherApiClient {
         Self::decode_response(response)
     }
 
-    #[cfg(test)]
     pub async fn fetch_weekly(&self, lat: f64, lon: f64) -> Result<WeatherForecast, ClientError> {
         let request_url = format!(
-            "https://api.openweathermap.org/data/2.5/forecast?lat={}&lon={}&appid={}&units={}&lang={}",
+            "https://api.openweathermap.org/data/2.5/forecast?lat={}&lon={}&appid={}&units={}&lang={}&cnt={}",
             lat,
             lon,
             OPEN_WEATHER_MAP_API_TOKEN.as_str(),
             UNITS,
-            LANG
+            LANG,
+            9,
         );
 
         let response = self.client.get(&request_url).send()?;
 
         Self::decode_weekly_response(response)
     }
-    #[cfg(test)]
+
     pub fn decode_weekly_response(
         mut response: reqwest::Response,
     ) -> Result<WeatherForecast, ClientError> {
         let status_code = response.status().as_u16();
         let string_response = response.text()?;
+
         if status_code == 200 {
             let json_result: WeatherForecast = serde_json::from_str(&string_response).unwrap();
-            println!("{}", json_result);
             return Ok(json_result);
         };
 
         Err(ClientError::StatusCodeError((status_code, string_response)))
     }
+
     pub fn decode_response(mut response: reqwest::Response) -> Result<Weather, ClientError> {
         let status_code = response.status().as_u16();
         let string_response = response.text()?;

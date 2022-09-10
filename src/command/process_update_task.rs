@@ -240,9 +240,15 @@ impl UpdateProcessor {
 
                 self.return_to_initial().await?;
 
+                let minutes_pretty = if minutes < 10 {
+                    format!("0{}", vec[1])
+                } else {
+                    vec[1].to_string()
+                };
+
                 let text = format!(
                     "Weather info scheduled every day at {}:{} UTC {}",
-                    vec[0], vec[1], offset
+                    vec[0], minutes_pretty, offset
                 );
 
                 self.send_message(&text).await?;
@@ -526,7 +532,7 @@ impl AsyncRunnable for ScheduleWeatherTask {
         let weather_client = WeatherApiClient::weather_client().await;
 
         let weather_info = weather_client
-            .fetch(city.coord.lat, city.coord.lon)
+            .fetch_weekly(city.coord.lat, city.coord.lon)
             .await
             .unwrap();
 

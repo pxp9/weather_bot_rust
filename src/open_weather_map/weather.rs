@@ -35,10 +35,10 @@ impl fmt::Display for Forecast {
         let pressure = self.main.pressure;
         let humidity = self.main.humidity;
         let pop = self.pop * 100.0;
-	let dt = self.dt_txt.clone();
+        let dt = self.dt_txt.clone();
 
         let st: String = format!(
-        "\n\n==================== {} ===================\n\n🌍🌍 Weather: {}\n🌡️🌡️ Mean Temperature: {} ºC\n🧊🧊 Minimum temperature: {} ºC\n🔥🔥 Maximum temperature: {} ºC\n⛰️⛰️ Pressure: {} hPa\n💧💧 Humidity: {} %\n Rain probability: {} %",
+        "\n==== {} ====\n🌍🌍 Weather: {}\n🌡️🌡️ Mean Temperature: {} ºC\n🧊🧊 Minimum temperature: {} ºC\n🔥🔥 Maximum temperature: {} ºC\n⛰️⛰️ Pressure: {} hPa\n💧💧 Humidity: {} %\n Rain probability: {} %",
         dt, weather_desc, temp, temp_min, temp_max, pressure, humidity, pop
 	);
 
