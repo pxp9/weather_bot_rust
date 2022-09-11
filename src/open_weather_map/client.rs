@@ -60,7 +60,7 @@ impl WeatherApiClient {
         Self::decode_weekly_response(response)
     }
 
-    pub fn decode_weekly_response(
+    fn decode_weekly_response(
         mut response: reqwest::Response,
     ) -> Result<WeatherForecast, ClientError> {
         let status_code = response.status().as_u16();
@@ -74,7 +74,7 @@ impl WeatherApiClient {
         Err(ClientError::StatusCodeError((status_code, string_response)))
     }
 
-    pub fn decode_response(mut response: reqwest::Response) -> Result<Weather, ClientError> {
+    fn decode_response(mut response: reqwest::Response) -> Result<Weather, ClientError> {
         let status_code = response.status().as_u16();
         let string_response = response.text()?;
 
@@ -84,17 +84,5 @@ impl WeatherApiClient {
         };
 
         Err(ClientError::StatusCodeError((status_code, string_response)))
-    }
-}
-
-mod tests {
-
-    #[tokio::test]
-    async fn fetch_weekly() {
-        let weather_client = super::WeatherApiClient::weather_client().await;
-        weather_client
-            .fetch_weekly(-3.70256, 40.4165)
-            .await
-            .unwrap();
     }
 }
