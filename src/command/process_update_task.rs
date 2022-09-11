@@ -609,22 +609,26 @@ impl AsyncRunnable for ProcessUpdateTask {
                 return Ok(());
             }
         };
-        let result = processor.process().await;
-        if let Err(error) = result {
-            log::error!(
-                "Failed to process the update {:?} - {:?}. Reverting...",
-                self.update,
-                error
-            );
 
-            let result = processor.revert_state().await;
+        match processor.process().await {
+            Err(error) => {
+                log::error!(
+                    "Failed to process the update {:?} - {:?}. Reverting...",
+                    self.update,
+                    error
+                );
 
-            if let Err(err) = result {
-                log::error!("Failed to revert: {:?}", err);
+                let result = processor.revert_state().await;
+
+                if let Err(err) = result {
+                    log::error!("Failed to revert: {:?}", err);
+                }
             }
-        } else if let Some(schedule_task) = result.unwrap() {
-            queueable.schedule_task(&schedule_task).await?;
-        }
+            Ok(Some(schedule_task)) => {
+                queueable.schedule_task(&schedule_task).await?;
+            }
+            _ => {}
+        };
 
         Ok(())
     }
