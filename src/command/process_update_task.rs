@@ -37,6 +37,9 @@ pub enum Command {
     Start,
     Cancel,
     Schedule,
+    CurrentDefaultCity,
+    CurrentOffset,
+    UnSchedule,
     UnknownCommand(String),
 }
 
@@ -64,6 +67,9 @@ impl FromStr for Command {
             "/set_default_city" => Command::SetDefaultCity,
             "/cancel" => Command::Cancel,
             "/schedule" => Command::Schedule,
+            "/unschedule" => Command::UnSchedule,
+            "/current_default_city" => Command::CurrentDefaultCity,
+            "/current_offset" => Command::CurrentOffset,
             _ => Command::UnknownCommand(command_str.to_string()),
         };
 
@@ -162,6 +168,16 @@ impl UpdateProcessor {
                 Ok(())
             }
             Command::Start => self.start_message().await,
+            Command::CurrentDefaultCity => {
+                let text = match self.chat.default_city_id {
+                    Some(id) => match self.repo.search_city_by_id(&id).await {
+                        Ok(city) => format!("Your default city is {}", city),
+                        Err(_) => format!("You do not have default city"),
+                    },
+                    None => format!("You do not have default city"),
+                };
+                self.send_message(&text).await
+            }
             Command::SetDefaultCity => self.set_city().await,
             Command::Default => match self.chat.default_city_id {
                 Some(id) => {
@@ -313,8 +329,8 @@ impl UpdateProcessor {
         .await
     }
 
-    fn parse_time(hour_or_minutes: &str, max_range: i32, min_range: i32) -> Result<i32, ()> {
-        match hour_or_minutes.parse::<i32>() {
+    fn parse_time(hour_or_minutes: &str, max_range: i8, min_range: i8) -> Result<i8, ()> {
+        match hour_or_minutes.parse::<i8>() {
             Ok(number) => {
                 if !(min_range..=max_range).contains(&number) {
                     Err(())

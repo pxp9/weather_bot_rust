@@ -110,6 +110,12 @@ pub struct Coord {
     pub lat: f64,
 }
 
+impl fmt::Display for Coord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "( lon:{}, lat:{} )", self.lon, self.lat)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, TypedBuilder)]
 pub struct City {
     pub id: i32,
@@ -117,6 +123,20 @@ pub struct City {
     pub state: String,
     pub country: String,
     pub coord: Coord,
+}
+
+impl fmt::Display for City {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.state.is_empty() {
+            write!(f, "{},{} Coords: {}", self.name, self.country, self.coord)
+        } else {
+            write!(
+                f,
+                "{},{},{} Coords: {}",
+                self.name, self.country, self.state, self.coord
+            )
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
