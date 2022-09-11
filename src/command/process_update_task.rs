@@ -313,16 +313,16 @@ impl UpdateProcessor {
         .await
     }
 
-    fn parse_time(hour_or_minutes: &str, max_range: i32, min_range: i32) -> i32 {
+    fn parse_time(hour_or_minutes: &str, max_range: i32, min_range: i32) -> Result<i32, ()> {
         match hour_or_minutes.parse::<i32>() {
             Ok(number) => {
                 if !(min_range..=max_range).contains(&number) {
-                    -1
+                    Err(())
                 } else {
-                    number
+                    Ok(number)
                 }
             }
-            Err(_) => -1,
+            Err(_) => Err(()),
         }
     }
 
@@ -343,13 +343,13 @@ impl UpdateProcessor {
         }
 
         let hour = match Self::parse_time(vec[0], 23, 0) {
-            -1 => return self.not_time_message().await,
-            number => number,
+            Err(_) => return self.not_time_message().await,
+            Ok(number) => number,
         };
 
         let minutes = match Self::parse_time(vec[1], 59, 0) {
-            -1 => return self.not_time_message().await,
-            number => number,
+            Err(_) => return self.not_time_message().await,
+            Ok(number) => number,
         };
 
         self.repo
