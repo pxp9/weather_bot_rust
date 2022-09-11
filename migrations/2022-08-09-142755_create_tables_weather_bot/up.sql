@@ -31,3 +31,16 @@ CREATE TABLE chats (
   PRIMARY KEY (id, user_id),
   CONSTRAINT fk_cities FOREIGN KEY(default_city_id) REFERENCES cities(id)
 );
+
+CREATE TABLE forecasts (
+  chat_id BIGINT,
+  city_id INT,
+  cron_expression VARCHAR(80),
+  last_delivered_at TIMESTAMP WITH TIME ZONE,
+  next_delivery_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  update_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  create_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(chat_id, city_id),
+  CONSTRAINT fk_cities FOREIGN KEY(city_id) REFERENCES cities(id),
+  CONSTRAINT fk_chat FOREIGN KEY(chat_id) REFERENCES chats(id)
+);

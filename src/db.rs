@@ -7,7 +7,9 @@ use bb8_postgres::bb8::RunError;
 use bb8_postgres::tokio_postgres::tls::NoTls;
 use bb8_postgres::tokio_postgres::Row;
 use bb8_postgres::PostgresConnectionManager;
+use fang::DateTime;
 use fang::FangError;
+use fang::Utc;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
 use thiserror::Error;
@@ -79,6 +81,17 @@ pub struct Chat {
     pub default_city_id: Option<i32>,
 }
 
+#[derive(Debug, Clone, TypedBuilder)]
+pub struct Forecast {
+    pub chat_id: i64,
+    pub city_id: i32,
+    pub cron_expression: String,
+    pub last_delivered_at: Option<DateTime<Utc>>,
+    pub next_delivery_at: DateTime<Utc>,
+    pub update_at: DateTime<Utc>,
+    pub create_at: DateTime<Utc>,
+}
+
 impl Repo {
     pub async fn repo() -> Result<&'static Repo, BotDbError> {
         REPO.get_or_try_init(Repo::new).await
@@ -122,6 +135,23 @@ impl Repo {
         }
     }
 
+    pub async fn get_forecast(&self, chat_id: &i64, city_id: &i32) -> Result<Forecast, BotDbError> {
+        let connection = self.pool.get().await?;
+        let row = connection
+            .query_one(GET_FORECAST, &[chat_id, city_id])
+            .await?;
+
+        let forecast = Forecast::builder()
+            .chat_id(row.get("chat_id"))
+            .city_id(row.get("city_id"))
+            .last_delivered_at(row.try_get("last_delivered_at").ok())
+            .next_delivery_at(row.get("next_delivery_at"))
+            .update_at(row.get("update_at"))
+            .create_at(row.get("create_at"))
+            .build();
+
+        Ok(forecast)
+    }
     pub async fn check_cities_exist(&self) -> Result<u64, BotDbError> {
         let connection = self.pool.get().await?;
         let n = connection.execute(CHECK_CITIES_EXIST, &[]).await?;
