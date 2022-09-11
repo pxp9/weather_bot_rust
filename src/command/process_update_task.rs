@@ -23,6 +23,8 @@ use typed_builder::TypedBuilder;
 const BOT_NAME: &str = "@RustWeather77Bot";
 pub const TASK_TYPE: &str = "process_update";
 
+pub const SCHEDULED_TASK_TYPE: &str = "scheduled_forecast";
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "fang::serde")]
 pub struct ProcessUpdateTask {
@@ -590,7 +592,7 @@ impl AsyncRunnable for ScheduleWeatherTask {
     }
 
     fn task_type(&self) -> String {
-        TASK_TYPE.to_string()
+        SCHEDULED_TASK_TYPE.to_string()
     }
 
     fn cron(&self) -> Option<Scheduled> {

@@ -1,3 +1,4 @@
+use crate::command::process_update_task::SCHEDULED_TASK_TYPE;
 use crate::command::process_update_task::TASK_TYPE;
 use crate::DATABASE_URL;
 use fang::asynk::async_queue::AsyncQueue;
@@ -25,10 +26,18 @@ pub async fn start_workers() {
 
     let mut pool: AsyncWorkerPool<AsyncQueue<NoTls>> = AsyncWorkerPool::builder()
         .number_of_workers(NUMBER_OF_WORKERS)
-        .sleep_params(params)
+        .sleep_params(params.clone())
         .queue(queue.clone())
         .task_type(TASK_TYPE)
         .build();
 
+    let mut pool_scheduled: AsyncWorkerPool<AsyncQueue<NoTls>> = AsyncWorkerPool::builder()
+        .number_of_workers(NUMBER_OF_WORKERS)
+        .sleep_params(params)
+        .queue(queue.clone())
+        .task_type(SCHEDULED_TASK_TYPE)
+        .build();
+
     pool.start().await;
+    pool_scheduled.start().await;
 }
