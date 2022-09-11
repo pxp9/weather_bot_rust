@@ -174,9 +174,9 @@ impl UpdateProcessor {
                 let text = match self.chat.default_city_id {
                     Some(id) => match self.repo.search_city_by_id(&id).await {
                         Ok(city) => format!("Your default city is {}", city),
-                        Err(_) => format!("You do not have default city"),
+                        Err(_) => "You do not have default city".to_string(),
                     },
-                    None => format!("You do not have default city"),
+                    None => "You do not have default city".to_string(),
                 };
                 self.send_message(&text).await
             }
