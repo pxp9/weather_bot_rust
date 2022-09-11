@@ -545,10 +545,10 @@ pub struct ScheduleWeatherTask {
 impl AsyncRunnable for ScheduleWeatherTask {
     async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
         // here we should program the weather_info deliver
-        let repo = Repo::repo().await.unwrap();
+        let repo = Repo::repo().await?;
         let api = ApiClient::api_client().await;
 
-        let city = repo.search_city_by_id(&self.default_city_id).await.unwrap();
+        let city = repo.search_city_by_id(&self.default_city_id).await?;
 
         let weather_client = WeatherApiClient::weather_client().await;
 

@@ -7,6 +7,7 @@ use bb8_postgres::bb8::RunError;
 use bb8_postgres::tokio_postgres::tls::NoTls;
 use bb8_postgres::tokio_postgres::Row;
 use bb8_postgres::PostgresConnectionManager;
+use fang::FangError;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
 use thiserror::Error;
@@ -36,6 +37,13 @@ pub enum BotDbError {
     PgError(#[from] bb8_postgres::tokio_postgres::Error),
     #[error("City not found")]
     CityNotFoundError,
+}
+
+impl From<BotDbError> for FangError {
+    fn from(error: BotDbError) -> Self {
+        let description = format!("{:?}", error);
+        FangError { description }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, ToSql, FromSql)]
