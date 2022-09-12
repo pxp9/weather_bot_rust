@@ -2649,6 +2649,7 @@ name = "weather_bot_rust"
 version = "0.2.0"
 dependencies = [
  "bb8-postgres 0.7.0",
+ "cron",
  "fang",
  "frankenstein",
  "lazy_static",

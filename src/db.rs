@@ -7,11 +7,13 @@ use bb8_postgres::bb8::RunError;
 use bb8_postgres::tokio_postgres::tls::NoTls;
 use bb8_postgres::tokio_postgres::Row;
 use bb8_postgres::PostgresConnectionManager;
+use cron::Schedule;
 use fang::DateTime;
 use fang::FangError;
 use fang::Utc;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
+use std::str::FromStr;
 use thiserror::Error;
 use tokio::sync::OnceCell;
 use typed_builder::TypedBuilder;
@@ -22,6 +24,7 @@ const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
 const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
+const INSERT_FORECAST: &str = include_str!("queries/insert_forecast.sql");
 const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
 const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
@@ -30,6 +33,7 @@ const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CITY_BY_ID: &str = include_str!("queries/search_city_by_id.sql");
 const GET_CHAT: &str = include_str!("queries/get_chat.sql");
+const GET_FORECAST: &str = include_str!("queries/get_forecast.sql");
 
 #[derive(Debug, Error)]
 pub enum BotDbError {
@@ -37,8 +41,12 @@ pub enum BotDbError {
     PoolError(#[from] RunError<bb8_postgres::tokio_postgres::Error>),
     #[error(transparent)]
     PgError(#[from] bb8_postgres::tokio_postgres::Error),
+    #[error(transparent)]
+    CronError(#[from] cron::error::Error),
     #[error("City not found")]
     CityNotFoundError,
+    #[error("No timestamps that match with this cron expression")]
+    NoTimestampsError,
 }
 
 impl From<BotDbError> for FangError {
@@ -148,10 +156,44 @@ impl Repo {
             .next_delivery_at(row.get("next_delivery_at"))
             .update_at(row.get("update_at"))
             .create_at(row.get("create_at"))
+            .cron_expression(row.get("cron_expression"))
             .build();
 
         Ok(forecast)
     }
+
+    pub fn calculate_next_delivery(cron_expression: &str) -> Result<DateTime<Utc>, BotDbError> {
+        let schedule = Schedule::from_str(cron_expression)?;
+        let mut iterator = schedule.upcoming(Utc);
+
+        iterator.next().ok_or(BotDbError::NoTimestampsError)
+    }
+
+    pub async fn insert_forecast(
+        &self,
+        chat_id: &i64,
+        city_id: &i32,
+        cron_expression: String,
+    ) -> Result<u64, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let next_delivery_at = Self::calculate_next_delivery(&cron_expression)?;
+
+        let n = connection
+            .execute(
+                INSERT_FORECAST,
+                &[
+                    chat_id,
+                    city_id,
+                    &cron_expression,
+                    &next_delivery_at,
+                    &Utc::now(),
+                ],
+            )
+            .await?;
+        Ok(n)
+    }
+
     pub async fn check_cities_exist(&self) -> Result<u64, BotDbError> {
         let connection = self.pool.get().await?;
         let n = connection.execute(CHECK_CITIES_EXIST, &[]).await?;
