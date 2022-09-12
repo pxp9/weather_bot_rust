@@ -9,14 +9,13 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 
 CREATE TABLE cities (
-  id SERIAL,
+  id SERIAL PRIMARY KEY,
   name VARCHAR(80) NOT NULL,
   country VARCHAR(80) NOT NULL,
   state VARCHAR(80) NOT NULL,
   lon DOUBLE PRECISION NOT NULL,
   lat DOUBLE PRECISION NOT NULL,
-  UNIQUE(name, country, state),
-  PRIMARY KEY (id)
+  UNIQUE(name, country, state)
 );
 
 CREATE INDEX cities_name_trgm_idx ON cities USING gin (name gin_trgm_ops);
@@ -34,13 +33,14 @@ CREATE TABLE chats (
 
 CREATE TABLE forecasts (
   chat_id BIGINT,
+  user_id BYTEA,
   city_id INT,
   cron_expression VARCHAR(80),
   last_delivered_at TIMESTAMP WITH TIME ZONE,
   next_delivery_at TIMESTAMP WITH TIME ZONE NOT NULL,
   update_at TIMESTAMP WITH TIME ZONE NOT NULL,
   create_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-  PRIMARY KEY(chat_id, city_id),
+  PRIMARY KEY(chat_id, user_id, city_id),
   CONSTRAINT fk_cities FOREIGN KEY(city_id) REFERENCES cities(id),
-  CONSTRAINT fk_chat FOREIGN KEY(chat_id) REFERENCES chats(id)
+  CONSTRAINT fk_chat FOREIGN KEY(chat_id, user_id) REFERENCES chats(id, user_id)
 );

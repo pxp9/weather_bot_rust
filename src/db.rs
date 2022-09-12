@@ -92,6 +92,7 @@ pub struct Chat {
 #[derive(Debug, Clone, TypedBuilder)]
 pub struct Forecast {
     pub chat_id: i64,
+    pub user_id: u64,
     pub city_id: i32,
     pub cron_expression: String,
     pub last_delivered_at: Option<DateTime<Utc>>,
@@ -149,8 +150,12 @@ impl Repo {
             .query_one(GET_FORECAST, &[chat_id, city_id])
             .await?;
 
+        // Pass user_id bytes to u64
+        let user_id = Self::bytes_to_u64(row.get("user_id"));
+
         let forecast = Forecast::builder()
             .chat_id(row.get("chat_id"))
+            .user_id(user_id)
             .city_id(row.get("city_id"))
             .last_delivered_at(row.try_get("last_delivered_at").ok())
             .next_delivery_at(row.get("next_delivery_at"))
@@ -162,6 +167,12 @@ impl Repo {
         Ok(forecast)
     }
 
+    fn bytes_to_u64(bytes: &[u8]) -> u64 {
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(&bytes);
+        Self::as_u64_le(&arr)
+    }
+
     pub fn calculate_next_delivery(cron_expression: &str) -> Result<DateTime<Utc>, BotDbError> {
         let schedule = Schedule::from_str(cron_expression)?;
         let mut iterator = schedule.upcoming(Utc);
@@ -169,13 +180,27 @@ impl Repo {
         iterator.next().ok_or(BotDbError::NoTimestampsError)
     }
 
+    fn as_u64_le(array: &[u8; 8]) -> u64 {
+        (array[0] as u64)
+            + ((array[1] as u64) << 8)
+            + ((array[2] as u64) << 16)
+            + ((array[3] as u64) << 24)
+            + ((array[4] as u64) << 32)
+            + ((array[5] as u64) << 40)
+            + ((array[6] as u64) << 48)
+            + ((array[7] as u64) << 56)
+    }
+
     pub async fn insert_forecast(
         &self,
         chat_id: &i64,
+        user_id: u64,
         city_id: &i32,
         cron_expression: String,
     ) -> Result<u64, BotDbError> {
         let connection = self.pool.get().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
 
         let next_delivery_at = Self::calculate_next_delivery(&cron_expression)?;
 
@@ -184,6 +209,7 @@ impl Repo {
                 INSERT_FORECAST,
                 &[
                     chat_id,
+                    &bytes,
                     city_id,
                     &cron_expression,
                     &next_delivery_at,
@@ -395,7 +421,7 @@ mod db_test {
         let bytes: &[u8] = row.get("user_id");
         let mut arr = [0u8; 8];
         arr.copy_from_slice(bytes);
-        let user_id = as_u64_le(&arr);
+        let user_id = Repo::as_u64_le(&arr);
 
         // testing modify state
 
@@ -423,15 +449,5 @@ mod db_test {
 
         let n = db_controller.delete_client(&111111, 1111111).await.unwrap();
         assert_eq!(n, 1_u64);
-    }
-    fn as_u64_le(array: &[u8; 8]) -> u64 {
-        (array[0] as u64)
-            + ((array[1] as u64) << 8)
-            + ((array[2] as u64) << 16)
-            + ((array[3] as u64) << 24)
-            + ((array[4] as u64) << 32)
-            + ((array[5] as u64) << 40)
-            + ((array[6] as u64) << 48)
-            + ((array[7] as u64) << 56)
     }
 }
