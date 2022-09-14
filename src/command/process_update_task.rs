@@ -595,7 +595,7 @@ impl AsyncRunnable for ScheduleWeatherTask {
         SCHEDULED_TASK_TYPE.to_string()
     }
 
-    fn cron(&self) -> Option<Scheduled> {
+    /*fn cron(&self) -> Option<Scheduled> {
         let hour_utc = if self.user_hour - self.offset < 0 {
             self.user_hour - self.offset + 24
         } else {
@@ -606,7 +606,7 @@ impl AsyncRunnable for ScheduleWeatherTask {
             "0 {} {} * * * *",
             self.minutes, hour_utc
         )))
-    }
+    }*/
 }
 
 impl ProcessUpdateTask {
