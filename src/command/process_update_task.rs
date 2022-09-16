@@ -12,8 +12,10 @@ use fang::serde::Deserialize;
 use fang::serde::Serialize;
 use fang::typetag;
 use fang::AsyncRunnable;
+use fang::DateTime;
 use fang::FangError;
 use fang::Scheduled;
+use fang::Utc;
 use frankenstein::Update;
 use frankenstein::UpdateContent;
 use std::fmt::Write;
@@ -290,14 +292,22 @@ impl UpdateProcessor {
                 let user_hour = vec[0].parse::<i8>().unwrap();
                 let minutes = vec[1].parse::<i8>().unwrap();
 
+                let hour_utc = if user_hour - offset < 0 {
+                    user_hour - offset + 24
+                } else {
+                    user_hour - offset
+                };
+
+                let cron_expression = format!("0 {} {} * * * *", minutes, hour_utc);
+
                 let schedule_weather_task = ScheduleWeatherTask::builder()
-                    .user_hour(user_hour)
-                    .minutes(minutes)
-                    .offset(offset)
                     .username(self.username.clone())
                     .chat_id(self.chat.id)
+                    .user_id(self.chat.user_id)
+                    .cron_expression(cron_expression)
                     // Safe unwrap checked in process_time func.
-                    .default_city_id(self.chat.default_city_id.unwrap())
+                    // We have to ask about city to get this :(, have to be done
+                    .city_id(self.chat.default_city_id.unwrap())
                     .build();
 
                 self.return_to_initial().await?;
@@ -550,23 +560,56 @@ impl UpdateProcessor {
 #[derive(Serialize, Deserialize, Debug, TypedBuilder, Eq, PartialEq, Clone)]
 #[serde(crate = "fang::serde")]
 pub struct ScheduleWeatherTask {
-    user_hour: i8,
-    minutes: i8,
-    offset: i8,
+    cron_expression: String,
     username: String,
     chat_id: i64,
-    default_city_id: i32,
+    user_id: u64,
+    city_id: i32,
+}
+
+impl ScheduleWeatherTask {
+    fn compute_next_delivery(&self) -> DateTime<Utc> {
+        // compute next deliver
+        // This unwrap is secure because it depends of a call that i have done.
+        // So if here panic! for unwrap may be a bug in the bot.
+
+        Repo::calculate_next_delivery(&self.cron_expression).unwrap()
+    }
 }
 
 #[typetag::serde]
 #[async_trait]
 impl AsyncRunnable for ScheduleWeatherTask {
-    async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
+    async fn run(&self, queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
         // here we should program the weather_info deliver
         let repo = Repo::repo().await?;
         let api = ApiClient::api_client().await;
 
-        let city = repo.search_city_by_id(&self.default_city_id).await?;
+        let city = repo.search_city_by_id(&self.city_id).await?;
+
+        let next_delivery = self.compute_next_delivery();
+        let last_delivery = Utc::now();
+        // Insert forecast in forecasts table if not exists or update the forecasts table.
+
+        repo.update_or_insert_forecast(
+            &self.chat_id,
+            &self.user_id,
+            &self.city_id,
+            self.cron_expression.clone(),
+            last_delivery,
+            next_delivery,
+        )
+        .await?;
+
+        let task = ScheduleWeatherTask::builder()
+            .username(self.username.clone())
+            .cron_expression(self.cron_expression)
+            .chat_id(self.chat_id)
+            .user_id(self.user_id)
+            .city_id(self.city_id)
+            .build();
+
+        queueable.schedule_task(&task).await?;
 
         let weather_client = WeatherApiClient::weather_client().await;
 
@@ -596,14 +639,7 @@ impl AsyncRunnable for ScheduleWeatherTask {
     }
 
     fn cron(&self) -> Option<Scheduled> {
-        let hour_utc = if self.user_hour - self.offset < 0 {
-            self.user_hour - self.offset + 24
-        } else {
-            self.user_hour - self.offset
-        };
-
-        // this has to be change
-        Some(Scheduled::ScheduleOnce(Utc::now()))
+        Some(Scheduled::ScheduleOnce(self.compute_next_delivery()))
     }
 }
 

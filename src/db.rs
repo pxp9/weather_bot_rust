@@ -150,21 +150,7 @@ impl Repo {
             .query_one(GET_FORECAST, &[chat_id, city_id])
             .await?;
 
-        // Pass user_id bytes to u64
-        let user_id = Self::bytes_to_u64(row.get("user_id"));
-
-        let forecast = Forecast::builder()
-            .chat_id(row.get("chat_id"))
-            .user_id(user_id)
-            .city_id(row.get("city_id"))
-            .last_delivered_at(row.try_get("last_delivered_at").ok())
-            .next_delivery_at(row.get("next_delivery_at"))
-            .update_at(row.get("update_at"))
-            .create_at(row.get("create_at"))
-            .cron_expression(row.get("cron_expression"))
-            .build();
-
-        Ok(forecast)
+        Self::row_to_forecast(row)
     }
 
     fn bytes_to_u64(bytes: &[u8]) -> u64 {
@@ -197,15 +183,15 @@ impl Repo {
         user_id: u64,
         city_id: &i32,
         cron_expression: String,
-    ) -> Result<u64, BotDbError> {
+    ) -> Result<Forecast, BotDbError> {
         let connection = self.pool.get().await?;
 
         let bytes = user_id.to_le_bytes().to_vec();
 
         let next_delivery_at = Self::calculate_next_delivery(&cron_expression)?;
 
-        let n = connection
-            .execute(
+        let row = connection
+            .query_one(
                 INSERT_FORECAST,
                 &[
                     chat_id,
@@ -217,7 +203,36 @@ impl Repo {
                 ],
             )
             .await?;
-        Ok(n)
+
+        Self::row_to_forecast(row)
+    }
+
+    fn row_to_forecast(row: Row) -> Result<Forecast, BotDbError> {
+        let user_id = Self::bytes_to_u64(row.get("user_id"));
+
+        let forecast = Forecast::builder()
+            .chat_id(row.get("chat_id"))
+            .user_id(user_id)
+            .city_id(row.get("city_id"))
+            .last_delivered_at(row.try_get("last_delivered_at").ok())
+            .next_delivery_at(row.get("next_delivery_at"))
+            .update_at(row.get("update_at"))
+            .create_at(row.get("create_at"))
+            .cron_expression(row.get("cron_expression"))
+            .build();
+
+        Ok(forecast)
+    }
+
+    pub async fn update_or_insert_forecast(
+        &self,
+        chat_id: &i64,
+        user_id: &u64,
+        city_id: &i32,
+        cron_expression: String,
+        last_delivered_at: DateTime<Utc>,
+        next_delivery_at: DateTime<Utc>,
+    ) -> Result<Forecast, BotDbError> {
     }
 
     pub async fn check_cities_exist(&self) -> Result<u64, BotDbError> {
