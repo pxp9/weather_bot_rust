@@ -588,22 +588,20 @@ impl AsyncRunnable for ScheduleWeatherTask {
         let city = repo.search_city_by_id(&self.city_id).await?;
 
         let next_delivery = self.compute_next_delivery();
-        let last_delivery = Utc::now();
         // Insert forecast in forecasts table if not exists or update the forecasts table.
 
         repo.update_or_insert_forecast(
             &self.chat_id,
-            &self.user_id,
+            self.user_id,
             &self.city_id,
             self.cron_expression.clone(),
-            last_delivery,
             next_delivery,
         )
         .await?;
 
         let task = ScheduleWeatherTask::builder()
             .username(self.username.clone())
-            .cron_expression(self.cron_expression)
+            .cron_expression(self.cron_expression.clone())
             .chat_id(self.chat_id)
             .user_id(self.user_id)
             .city_id(self.city_id)

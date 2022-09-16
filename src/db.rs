@@ -25,6 +25,7 @@ const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql"
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
 const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
 const INSERT_FORECAST: &str = include_str!("queries/insert_forecast.sql");
+const UPDATE_FORECAST: &str = include_str!("queries/update_forecast.sql");
 const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
 const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
@@ -227,12 +228,28 @@ impl Repo {
     pub async fn update_or_insert_forecast(
         &self,
         chat_id: &i64,
-        user_id: &u64,
+        user_id: u64,
         city_id: &i32,
         cron_expression: String,
-        last_delivered_at: DateTime<Utc>,
         next_delivery_at: DateTime<Utc>,
     ) -> Result<Forecast, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        match connection
+            .query_one(
+                UPDATE_FORECAST,
+                &[chat_id, &bytes, city_id, &Utc::now(), &next_delivery_at],
+            )
+            .await
+        {
+            Ok(row) => Self::row_to_forecast(row),
+            Err(_) => {
+                self.insert_forecast(chat_id, user_id, city_id, cron_expression)
+                    .await
+            }
+        }
     }
 
     pub async fn check_cities_exist(&self) -> Result<u64, BotDbError> {
