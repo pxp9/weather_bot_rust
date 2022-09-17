@@ -1,5 +1,5 @@
-use crate::command::process_update_task::SCHEDULED_TASK_TYPE;
 use crate::command::process_update_task::TASK_TYPE;
+use crate::deliver::SCHEDULED_TASK_TYPE;
 use crate::DATABASE_URL;
 use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_worker_pool::AsyncWorkerPool;

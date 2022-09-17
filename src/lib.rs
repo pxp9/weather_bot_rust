@@ -1,5 +1,6 @@
 pub mod command;
 pub mod db;
+pub mod deliver;
 pub mod open_weather_map;
 pub mod seeds;
 pub mod telegram;

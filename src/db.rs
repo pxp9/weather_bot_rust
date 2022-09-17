@@ -29,6 +29,7 @@ const UPDATE_FORECAST: &str = include_str!("queries/update_forecast.sql");
 const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
 const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
+const MODIFY_OFFSET: &str = include_str!("queries/modify_offset.sql");
 const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
 const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
@@ -66,6 +67,10 @@ pub enum ClientState {
     FindCity,
     #[postgres(name = "find_city_number")]
     FindCityNumber,
+    #[postgres(name = "schedule_city")]
+    ScheduleCity,
+    #[postgres(name = "schedule_city_number")]
+    ScheduleCityNumber,
     #[postgres(name = "set_city_number")]
     SetCityNumber,
     #[postgres(name = "set_city")]
@@ -86,12 +91,14 @@ pub struct Chat {
     pub id: i64,
     pub user_id: u64,
     pub state: ClientState,
+    pub offset: Option<i8>,
     pub selected: Option<String>,
     pub default_city_id: Option<i32>,
 }
 
 #[derive(Debug, Clone, TypedBuilder)]
 pub struct Forecast {
+    pub id: i32,
     pub chat_id: i64,
     pub user_id: u64,
     pub city_id: i32,
@@ -212,6 +219,7 @@ impl Repo {
         let user_id = Self::bytes_to_u64(row.get("user_id"));
 
         let forecast = Forecast::builder()
+            .id(row.get("id"))
             .chat_id(row.get("chat_id"))
             .user_id(user_id)
             .city_id(row.get("city_id"))
@@ -313,11 +321,12 @@ impl Repo {
         let row = connection.query_one(GET_CHAT, &[chat_id, &bytes]).await?;
 
         let chat = Chat::builder()
-            .id(row.get("id"))
+            .id(*chat_id)
             .user_id(user_id)
             .state(row.get("state"))
             .selected(row.try_get("selected").ok())
             .default_city_id(row.try_get("default_city_id").ok())
+            .offset(row.try_get("offset").ok())
             .build();
 
         Ok(chat)
@@ -373,6 +382,23 @@ impl Repo {
 
         let n = connection
             .execute(MODIFY_CITY, &[&city_id, chat_id, &bytes])
+            .await?;
+
+        Ok(n)
+    }
+
+    pub async fn modify_offset(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        offset: &i8,
+    ) -> Result<u64, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let n = connection
+            .execute(MODIFY_OFFSET, &[&offset, chat_id, &bytes])
             .await?;
 
         Ok(n)
