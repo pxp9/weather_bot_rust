@@ -175,14 +175,12 @@ impl Repo {
             .query(GET_FORECASTS_BY_TIME, &[&Utc::now()])
             .await?;
 
-        vec.into_iter()
-            .map(|row| Self::row_to_forecast(row))
-            .collect()
+        vec.into_iter().map(Self::row_to_forecast).collect()
     }
 
     fn bytes_to_u64(bytes: &[u8]) -> u64 {
         let mut arr = [0u8; 8];
-        arr.copy_from_slice(&bytes);
+        arr.copy_from_slice(bytes);
         Self::as_u64_le(&arr)
     }
 
