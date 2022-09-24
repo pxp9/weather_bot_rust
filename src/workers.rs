@@ -1,8 +1,10 @@
 use crate::command::process_update_task::TASK_TYPE;
+use crate::deliver::DeliverChecker;
 use crate::deliver::SCHEDULED_TASK_TYPE;
 use crate::DATABASE_URL;
 use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_worker_pool::AsyncWorkerPool;
+use fang::AsyncQueueable;
 use fang::NoTls;
 use fang::SleepParams;
 use std::time::Duration;
@@ -40,4 +42,6 @@ pub async fn start_workers() {
 
     pool.start().await;
     pool_scheduled.start().await;
+
+    queue.schedule_task(&DeliverChecker {}).await.unwrap();
 }

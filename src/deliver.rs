@@ -19,7 +19,6 @@ pub const SCHEDULED_TASK_TYPE: &str = "scheduled_forecast";
 #[serde(crate = "fang::serde")]
 pub struct ScheduleWeatherTask {
     cron_expression: String,
-    username: String,
     chat_id: i64,
     user_id: u64,
     city_id: i32,
@@ -38,11 +37,10 @@ impl ScheduleWeatherTask {
 #[typetag::serde]
 #[async_trait]
 impl AsyncRunnable for ScheduleWeatherTask {
-    async fn run(&self, queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
-        // Here we should fetch every forecast from forecasts table that
-        // created_at <= Utc::now() + Duration::minutes(5)
-
+    async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
+        // Here we should do one deliver.
         let repo = Repo::repo().await?;
+
         let api = ApiClient::api_client().await;
 
         let city = repo.search_city_by_id(&self.city_id).await?;
@@ -59,16 +57,6 @@ impl AsyncRunnable for ScheduleWeatherTask {
         )
         .await?;
 
-        let task = ScheduleWeatherTask::builder()
-            .username(self.username.clone())
-            .cron_expression(self.cron_expression.clone())
-            .chat_id(self.chat_id)
-            .user_id(self.user_id)
-            .city_id(self.city_id)
-            .build();
-
-        queueable.schedule_task(&task).await?;
-
         let weather_client = WeatherApiClient::weather_client().await;
 
         let weather_info = weather_client
@@ -77,8 +65,8 @@ impl AsyncRunnable for ScheduleWeatherTask {
             .unwrap();
 
         let text = format!(
-            "Hi {} !, this is your scheduled weather info.\n\n {},{}\nLat {} , Lon {}\n{}",
-            self.username, city.name, city.country, city.coord.lat, city.coord.lon, weather_info,
+            "Here is your forecast !, this is your scheduled weather info.\n\n {},{}\nLat {} , Lon {}\n{}",
+            city.name, city.country, city.coord.lat, city.coord.lon, weather_info,
         );
 
         api.send_message_without_reply(self.chat_id, text)
@@ -95,8 +83,52 @@ impl AsyncRunnable for ScheduleWeatherTask {
     fn task_type(&self) -> String {
         SCHEDULED_TASK_TYPE.to_string()
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+#[serde(crate = "fang::serde")]
+pub struct DeliverChecker;
+
+#[typetag::serde]
+#[async_trait]
+impl AsyncRunnable for DeliverChecker {
+    async fn run(&self, queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
+        // Here we should fetch every forecast from forecasts table that
+        // next_delivery_at <= Utc::now()
+
+        log::info!("DeliverChecker run");
+
+        let repo = Repo::repo().await?;
+
+        let forecasts = repo.get_forecasts_by_time().await?;
+
+        for forecast in forecasts.into_iter() {
+            let task = ScheduleWeatherTask::builder()
+                .cron_expression(forecast.cron_expression)
+                .chat_id(forecast.chat_id)
+                .user_id(forecast.user_id)
+                .city_id(forecast.city_id)
+                .build();
+
+            queueable.insert_task(&task).await?;
+        }
+
+        Ok(())
+    }
+
+    fn uniq(&self) -> bool {
+        true
+    }
+
+    fn task_type(&self) -> String {
+        SCHEDULED_TASK_TYPE.to_string()
+    }
 
     fn cron(&self) -> Option<Scheduled> {
-        Some(Scheduled::ScheduleOnce(self.compute_next_delivery()))
+        // Every 30 seconds this DeliverChecker is executed.
+        // It takes tasks that are going to be executed in 5 minutes and schedules to be executed
+        // by Fang.
+        let expression = "0/30 * * * * * *";
+        Some(Scheduled::CronPattern(expression.to_string()))
     }
 }

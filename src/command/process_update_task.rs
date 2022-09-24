@@ -320,10 +320,18 @@ impl UpdateProcessor {
 
         let cron_expression = format!("0 {} {} * * * *", minutes, hour_utc);
 
+        let datetime = Repo::calculate_next_delivery(&cron_expression)?;
+
         // Here we should call repo.insert_forecast
         // We have to ask city_id for now default city id set
         self.repo
-            .insert_forecast(&self.chat.id, self.chat.user_id, &city_id, cron_expression)
+            .update_or_insert_forecast(
+                &self.chat.id,
+                self.chat.user_id,
+                &city_id,
+                cron_expression,
+                datetime,
+            )
             .await?;
 
         self.return_to_initial().await?;
@@ -339,9 +347,7 @@ impl UpdateProcessor {
             user_hour, minutes_pretty, offset
         );
 
-        self.send_message(&text).await?;
-
-        Ok(())
+        self.send_message(&text).await
     }
 
     async fn process_offset(&self) -> Result<(), BotError> {
@@ -352,7 +358,7 @@ impl UpdateProcessor {
                 }
 
                 self.repo
-                    .modify_offset(&self.chat.id, self.chat.user_id, &offset)
+                    .modify_offset(&self.chat.id, self.chat.user_id, offset)
                     .await?;
 
                 // we have city_id , hour and minutes well formatted stored in selected see in process_time func.

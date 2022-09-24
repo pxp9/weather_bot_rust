@@ -26,7 +26,7 @@ CREATE TABLE chats (
   user_id BYTEA,
   state client_state DEFAULT 'initial' NOT NULL, -- Initial
   selected VARCHAR(80),
-  offset CHAR,
+  "offset" BYTEA,
   default_city_id INT,
   PRIMARY KEY (id, user_id),
   CONSTRAINT fk_cities FOREIGN KEY(default_city_id) REFERENCES cities(id)

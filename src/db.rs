@@ -36,6 +36,7 @@ const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CITY_BY_ID: &str = include_str!("queries/search_city_by_id.sql");
 const GET_CHAT: &str = include_str!("queries/get_chat.sql");
 const GET_FORECAST: &str = include_str!("queries/get_forecast.sql");
+const GET_FORECASTS_BY_TIME: &str = include_str!("queries/get_forecasts_by_time.sql");
 
 #[derive(Debug, Error)]
 pub enum BotDbError {
@@ -105,8 +106,8 @@ pub struct Forecast {
     pub cron_expression: String,
     pub last_delivered_at: Option<DateTime<Utc>>,
     pub next_delivery_at: DateTime<Utc>,
-    pub update_at: DateTime<Utc>,
-    pub create_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 }
 
 impl Repo {
@@ -152,13 +153,31 @@ impl Repo {
         }
     }
 
-    pub async fn get_forecast(&self, chat_id: &i64, city_id: &i32) -> Result<Forecast, BotDbError> {
+    pub async fn get_forecast(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        city_id: &i32,
+    ) -> Result<Forecast, BotDbError> {
+        let bytes = user_id.to_le_bytes().to_vec();
+
         let connection = self.pool.get().await?;
         let row = connection
-            .query_one(GET_FORECAST, &[chat_id, city_id])
+            .query_one(GET_FORECAST, &[chat_id, &bytes, city_id])
             .await?;
 
         Self::row_to_forecast(row)
+    }
+
+    pub async fn get_forecasts_by_time(&self) -> Result<Vec<Forecast>, BotDbError> {
+        let connection = self.pool.get().await?;
+        let vec = connection
+            .query(GET_FORECASTS_BY_TIME, &[&Utc::now()])
+            .await?;
+
+        vec.into_iter()
+            .map(|row| Self::row_to_forecast(row))
+            .collect()
     }
 
     fn bytes_to_u64(bytes: &[u8]) -> u64 {
@@ -225,8 +244,8 @@ impl Repo {
             .city_id(row.get("city_id"))
             .last_delivered_at(row.try_get("last_delivered_at").ok())
             .next_delivery_at(row.get("next_delivery_at"))
-            .update_at(row.get("update_at"))
-            .create_at(row.get("create_at"))
+            .updated_at(row.get("updated_at"))
+            .created_at(row.get("created_at"))
             .cron_expression(row.get("cron_expression"))
             .build();
 
@@ -320,13 +339,24 @@ impl Repo {
 
         let row = connection.query_one(GET_CHAT, &[chat_id, &bytes]).await?;
 
+        let offset_bytes = row.try_get("offset").ok();
+
+        let offset: Option<i8> = match offset_bytes {
+            Some(bytes) => {
+                let mut arr = [0u8; 1];
+                arr.copy_from_slice(bytes);
+                Some(i8::from_le_bytes(arr))
+            }
+            None => None,
+        };
+
         let chat = Chat::builder()
             .id(*chat_id)
             .user_id(user_id)
             .state(row.get("state"))
             .selected(row.try_get("selected").ok())
             .default_city_id(row.try_get("default_city_id").ok())
-            .offset(row.try_get("offset").ok())
+            .offset(offset)
             .build();
 
         Ok(chat)
@@ -391,14 +421,16 @@ impl Repo {
         &self,
         chat_id: &i64,
         user_id: u64,
-        offset: &i8,
+        offset: i8,
     ) -> Result<u64, BotDbError> {
         let connection = self.pool.get().await?;
+
+        let offset_bytes = offset.to_le_bytes();
 
         let bytes = user_id.to_le_bytes().to_vec();
 
         let n = connection
-            .execute(MODIFY_OFFSET, &[&offset, chat_id, &bytes])
+            .execute(MODIFY_OFFSET, &[&offset_bytes.as_slice(), chat_id, &bytes])
             .await?;
 
         Ok(n)
