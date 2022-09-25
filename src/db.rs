@@ -21,6 +21,7 @@ use typed_builder::TypedBuilder;
 static REPO: OnceCell<Repo> = OnceCell::const_new();
 
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
+const DELETE_FORECASTS: &str = include_str!("queries/delete_forecasts.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
 const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
@@ -166,7 +167,7 @@ impl Repo {
             .query_one(GET_FORECAST, &[chat_id, &bytes, city_id])
             .await?;
 
-        Self::row_to_forecast(row)
+        Ok(Self::row_to_forecast(row))
     }
 
     pub async fn get_forecasts_by_time(&self) -> Result<Vec<Forecast>, BotDbError> {
@@ -175,7 +176,7 @@ impl Repo {
             .query(GET_FORECASTS_BY_TIME, &[&Utc::now()])
             .await?;
 
-        vec.into_iter().map(Self::row_to_forecast).collect()
+        Ok(vec.into_iter().map(Self::row_to_forecast).collect())
     }
 
     fn bytes_to_u64(bytes: &[u8]) -> u64 {
@@ -229,13 +230,13 @@ impl Repo {
             )
             .await?;
 
-        Self::row_to_forecast(row)
+        Ok(Self::row_to_forecast(row))
     }
 
-    fn row_to_forecast(row: Row) -> Result<Forecast, BotDbError> {
+    fn row_to_forecast(row: Row) -> Forecast {
         let user_id = Self::bytes_to_u64(row.get("user_id"));
 
-        let forecast = Forecast::builder()
+        Forecast::builder()
             .id(row.get("id"))
             .chat_id(row.get("chat_id"))
             .user_id(user_id)
@@ -245,9 +246,7 @@ impl Repo {
             .updated_at(row.get("updated_at"))
             .created_at(row.get("created_at"))
             .cron_expression(row.get("cron_expression"))
-            .build();
-
-        Ok(forecast)
+            .build()
     }
 
     pub async fn update_or_insert_forecast(
@@ -269,7 +268,7 @@ impl Repo {
             )
             .await
         {
-            Ok(row) => Self::row_to_forecast(row),
+            Ok(row) => Ok(Self::row_to_forecast(row)),
             Err(_) => {
                 self.insert_forecast(chat_id, user_id, city_id, cron_expression)
                     .await
@@ -380,6 +379,22 @@ impl Repo {
             .execute(DELETE_CLIENT, &[chat_id, &bytes])
             .await?;
         Ok(n)
+    }
+
+    pub async fn delete_forecasts(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<Vec<Forecast>, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let vec: Vec<Row> = connection
+            .query(DELETE_FORECASTS, &[chat_id, &bytes])
+            .await?;
+
+        Ok(vec.into_iter().map(Self::row_to_forecast).collect())
     }
 
     pub async fn modify_state(

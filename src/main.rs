@@ -6,7 +6,7 @@ async fn main() {
     pretty_env_logger::init();
 
     log::info!("Starting bot");
-    workers::start_workers().await;
+    workers::start_workers().await.unwrap();
 
     let mut handler = Handler::new().await;
 

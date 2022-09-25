@@ -1,7 +1,9 @@
 use crate::db::BotDbError;
 use crate::db::Chat;
 use crate::db::ClientState;
+use crate::db::Forecast;
 use crate::db::Repo;
+use crate::deliver::ScheduleWeatherTask;
 use crate::open_weather_map::client::WeatherApiClient;
 use crate::open_weather_map::City;
 use crate::telegram::client::ApiClient;
@@ -118,35 +120,60 @@ impl UpdateProcessor {
         }
     }
 
-    pub async fn process(&self) -> Result<(), BotError> {
+    pub async fn process(&self) -> Result<Option<Vec<Forecast>>, BotError> {
         self.send_typing().await?;
 
         if Command::Cancel == self.command {
-            return self.cancel(None).await;
+            self.cancel(None).await?;
+            return Ok(None);
         }
 
         match self.chat.state {
             ClientState::Initial => self.process_initial().await,
 
-            ClientState::FindCity => self.process_find_city().await,
+            ClientState::FindCity => {
+                self.process_find_city().await?;
+                Ok(None)
+            }
 
-            ClientState::SetCity => self.process_set_city().await,
+            ClientState::SetCity => {
+                self.process_set_city().await?;
+                Ok(None)
+            }
 
-            ClientState::Time => self.process_time().await,
+            ClientState::Time => {
+                self.process_time().await?;
+                Ok(None)
+            }
 
-            ClientState::FindCityNumber => self.process_find_city_number().await,
+            ClientState::FindCityNumber => {
+                self.process_find_city_number().await?;
+                Ok(None)
+            }
 
-            ClientState::SetCityNumber => self.process_set_city_number().await,
+            ClientState::SetCityNumber => {
+                self.process_set_city_number().await?;
+                Ok(None)
+            }
 
-            ClientState::Offset => self.process_offset().await,
+            ClientState::Offset => {
+                self.process_offset().await?;
+                Ok(None)
+            }
 
-            ClientState::ScheduleCity => self.process_schedule_city().await,
+            ClientState::ScheduleCity => {
+                self.process_schedule_city().await?;
+                Ok(None)
+            }
 
-            ClientState::ScheduleCityNumber => self.process_schedule_city_number().await,
+            ClientState::ScheduleCityNumber => {
+                self.process_schedule_city_number().await?;
+                Ok(None)
+            }
         }
     }
 
-    async fn process_initial(&self) -> Result<(), BotError> {
+    async fn process_initial(&self) -> Result<Option<Vec<Forecast>>, BotError> {
         match self.command {
             Command::FindCity => {
                 self.repo
@@ -155,9 +182,12 @@ impl UpdateProcessor {
 
                 self.find_city_message().await?;
 
-                Ok(())
+                Ok(None)
             }
-            Command::Start => self.start_message().await,
+            Command::Start => {
+                self.start_message().await?;
+                Ok(None)
+            }
             Command::CurrentDefaultCity => {
                 let text = match self.chat.default_city_id {
                     Some(id) => match self.repo.search_city_by_id(&id).await {
@@ -166,24 +196,52 @@ impl UpdateProcessor {
                     },
                     None => "You do not have default city".to_string(),
                 };
-                self.send_message(&text).await
+                self.send_message(&text).await?;
+
+                Ok(None)
             }
-            Command::SetDefaultCity => self.set_city().await,
+            Command::SetDefaultCity => {
+                self.set_city().await?;
+                Ok(None)
+            }
             Command::Default => match self.chat.default_city_id {
                 Some(id) => {
                     let city = self.repo.search_city_by_id(&id).await?;
 
-                    self.get_weather(city).await
+                    self.get_weather(city).await?;
+
+                    Ok(None)
                 }
                 None => {
                     self.set_city().await?;
 
-                    self.not_default_message().await
+                    self.not_default_message().await?;
+
+                    Ok(None)
                 }
             },
-            Command::Schedule => self.schedule_weather().await,
-            _ => self.unknown_command().await,
+            Command::Schedule => {
+                self.schedule_weather().await?;
+                Ok(None)
+            }
+            Command::UnSchedule => self.unschedule().await,
+            _ => {
+                self.unknown_command().await?;
+                Ok(None)
+            }
         }
+    }
+
+    async fn unschedule(&self) -> Result<Option<Vec<Forecast>>, BotError> {
+        let vec = self
+            .repo
+            .delete_forecasts(&self.chat.id, self.chat.user_id)
+            .await
+            .unwrap();
+
+        let text = "Your forecasts were unscheduled";
+        self.send_message(text).await?;
+        Ok(Some(vec))
     }
 
     async fn process_schedule_city(&self) -> Result<(), BotError> {
@@ -629,7 +687,7 @@ impl ProcessUpdateTask {
 #[typetag::serde]
 #[async_trait]
 impl AsyncRunnable for ProcessUpdateTask {
-    async fn run(&self, _queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
+    async fn run(&self, queueable: &mut dyn AsyncQueueable) -> Result<(), FangError> {
         let processor = match UpdateProcessor::create(self.update.clone()).await {
             Ok(processor) => processor,
             Err(err) => {
@@ -639,15 +697,37 @@ impl AsyncRunnable for ProcessUpdateTask {
             }
         };
 
-        if let Err(error) = processor.process().await {
-            log::error!(
-                "Failed to process the update {:?} - {:?}. Reverting...",
-                self.update,
-                error
-            );
+        match processor.process().await {
+            Err(error) => {
+                log::error!(
+                    "Failed to process the update {:?} - {:?}. Reverting...",
+                    self.update,
+                    error
+                );
 
-            if let Err(err) = processor.revert_state().await {
-                log::error!("Failed to revert: {:?}", err);
+                if let Err(err) = processor.revert_state().await {
+                    log::error!("Failed to revert: {:?}", err);
+                }
+            }
+
+            Ok(option) => {
+                if let Some(vec) = option {
+                    let tasks: Vec<ScheduleWeatherTask> = vec
+                        .into_iter()
+                        .map(|forecast| {
+                            ScheduleWeatherTask::builder()
+                                .cron_expression(forecast.cron_expression)
+                                .chat_id(forecast.chat_id)
+                                .user_id(forecast.user_id)
+                                .city_id(forecast.city_id)
+                                .build()
+                        })
+                        .collect();
+
+                    for task in tasks {
+                        queueable.remove_task_by_metadata(&task).await?;
+                    }
+                }
             }
         }
 

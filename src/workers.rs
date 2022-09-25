@@ -5,13 +5,14 @@ use crate::DATABASE_URL;
 use fang::asynk::async_queue::AsyncQueue;
 use fang::asynk::async_worker_pool::AsyncWorkerPool;
 use fang::AsyncQueueable;
+use fang::FangError;
 use fang::NoTls;
 use fang::SleepParams;
 use std::time::Duration;
 
 pub static NUMBER_OF_WORKERS: u32 = 5;
 
-pub async fn start_workers() {
+pub async fn start_workers() -> Result<(), FangError> {
     let mut queue: AsyncQueue<NoTls> = AsyncQueue::builder()
         .uri(DATABASE_URL.clone())
         .max_pool_size(NUMBER_OF_WORKERS)
@@ -43,5 +44,6 @@ pub async fn start_workers() {
     pool.start().await;
     pool_scheduled.start().await;
 
-    queue.schedule_task(&DeliverChecker {}).await.unwrap();
+    queue.schedule_task(&DeliverChecker {}).await?;
+    Ok(())
 }
