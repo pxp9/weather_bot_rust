@@ -1,6 +1,7 @@
 use super::weather::Weather;
 use super::weather::WeatherForecast;
 use crate::OPEN_WEATHER_MAP_API_TOKEN;
+use fang::FangError;
 use reqwest::Client;
 use thiserror::Error;
 use tokio::sync::OnceCell;
@@ -24,6 +25,14 @@ pub enum ClientError {
     RequestError(#[from] reqwest::Error),
     #[error("invalid status code {}", self)]
     StatusCodeError((u16, String)),
+}
+
+impl From<ClientError> for FangError {
+    fn from(error: ClientError) -> Self {
+        let description = format!("{:?}", error);
+
+        FangError { description }
+    }
 }
 
 impl WeatherApiClient {

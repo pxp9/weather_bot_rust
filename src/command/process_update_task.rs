@@ -236,8 +236,7 @@ impl UpdateProcessor {
         let vec = self
             .repo
             .delete_forecasts(&self.chat.id, self.chat.user_id)
-            .await
-            .unwrap();
+            .await?;
 
         let text = "Your forecasts were unscheduled";
         self.send_message(text).await?;

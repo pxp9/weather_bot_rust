@@ -1,9 +1,9 @@
 use crate::RUST_TELEGRAM_BOT_TOKEN;
+use fang::FangError;
 use frankenstein::AllowedUpdate;
 use frankenstein::AsyncApi;
 use frankenstein::AsyncTelegramApi;
 use frankenstein::ChatAction;
-use frankenstein::Error;
 use frankenstein::GetUpdatesParams;
 use frankenstein::Message;
 use frankenstein::MethodResponse;
@@ -12,9 +12,24 @@ use frankenstein::SendChatActionParams;
 use frankenstein::SendMessageParams;
 use frankenstein::Update;
 use std::collections::VecDeque;
+use thiserror::Error;
 use tokio::sync::OnceCell;
 
 static API_CLIENT: OnceCell<ApiClient> = OnceCell::const_new();
+
+#[derive(Debug, Error)]
+pub enum ApiError {
+    #[error(transparent)]
+    FrankensteinError(#[from] frankenstein::Error),
+}
+
+impl From<ApiError> for FangError {
+    fn from(error: ApiError) -> Self {
+        let description = format!("{:?}", error);
+
+        FangError { description }
+    }
+}
 
 #[derive(Clone)]
 pub struct ApiClient {
@@ -69,15 +84,16 @@ impl ApiClient {
         }
     }
 
-    pub async fn send_typing(&self, chat_id: i64) -> Result<MethodResponse<bool>, Error> {
+    pub async fn send_typing(&self, chat_id: i64) -> Result<MethodResponse<bool>, ApiError> {
         let send_chat_action_params = SendChatActionParams::builder()
             .chat_id(chat_id)
             .action(ChatAction::Typing)
             .build();
 
-        self.telegram_client
+        Ok(self
+            .telegram_client
             .send_chat_action(&send_chat_action_params)
-            .await
+            .await?)
     }
 
     pub async fn send_message(
@@ -85,7 +101,7 @@ impl ApiClient {
         chat_id: i64,
         message_id: i32,
         text: String,
-    ) -> Result<MethodResponse<Message>, Error> {
+    ) -> Result<MethodResponse<Message>, ApiError> {
         let send_message_params = SendMessageParams::builder()
             .chat_id(chat_id)
             .text(text)
@@ -93,24 +109,26 @@ impl ApiClient {
             .parse_mode(ParseMode::Html)
             .build();
 
-        self.telegram_client
+        Ok(self
+            .telegram_client
             .send_message(&send_message_params)
-            .await
+            .await?)
     }
 
     pub async fn send_message_without_reply(
         &self,
         chat_id: i64,
         text: String,
-    ) -> Result<MethodResponse<Message>, Error> {
+    ) -> Result<MethodResponse<Message>, ApiError> {
         let send_message_params = SendMessageParams::builder()
             .chat_id(chat_id)
             .text(text)
             .parse_mode(ParseMode::Html)
             .build();
 
-        self.telegram_client
+        Ok(self
+            .telegram_client
             .send_message(&send_message_params)
-            .await
+            .await?)
     }
 }

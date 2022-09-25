@@ -15,6 +15,9 @@ use typed_builder::TypedBuilder;
 
 pub const SCHEDULED_TASK_TYPE: &str = "scheduled_forecast";
 
+// Every 30 seconds this DeliverChecker is executed.
+pub const CRON_DELIVER_CHECKER: &str = "0/30 * * * * * *";
+
 #[derive(Serialize, Deserialize, Debug, TypedBuilder, Eq, PartialEq, Clone)]
 #[serde(crate = "fang::serde")]
 pub struct ScheduleWeatherTask {
@@ -61,17 +64,14 @@ impl AsyncRunnable for ScheduleWeatherTask {
 
         let weather_info = weather_client
             .fetch_weekly(city.coord.lat, city.coord.lon)
-            .await
-            .unwrap();
+            .await?;
 
         let text = format!(
             "Here is your forecast !, this is your scheduled weather info.\n\n {},{}\nLat {} , Lon {}\n{}",
             city.name, city.country, city.coord.lat, city.coord.lon, weather_info,
         );
 
-        api.send_message_without_reply(self.chat_id, text)
-            .await
-            .unwrap();
+        api.send_message_without_reply(self.chat_id, text).await?;
 
         Ok(())
     }
@@ -125,10 +125,6 @@ impl AsyncRunnable for DeliverChecker {
     }
 
     fn cron(&self) -> Option<Scheduled> {
-        // Every 30 seconds this DeliverChecker is executed.
-        // It takes tasks that are going to be executed in 5 minutes and schedules to be executed
-        // by Fang.
-        let expression = "0/30 * * * * * *";
-        Some(Scheduled::CronPattern(expression.to_string()))
+        Some(Scheduled::CronPattern(CRON_DELIVER_CHECKER.to_string()))
     }
 }
