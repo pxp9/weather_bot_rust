@@ -27,6 +27,7 @@ const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
 const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
 const INSERT_FORECAST: &str = include_str!("queries/insert_forecast.sql");
 const UPDATE_FORECAST: &str = include_str!("queries/update_forecast.sql");
+const UPDATE_FORECAST_BY_USER: &str = include_str!("queries/update_forecast_by_user.sql");
 const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
 const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
@@ -37,6 +38,7 @@ const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CITY_BY_ID: &str = include_str!("queries/search_city_by_id.sql");
 const GET_CHAT: &str = include_str!("queries/get_chat.sql");
 const GET_FORECAST: &str = include_str!("queries/get_forecast.sql");
+const GET_FORECASTS_BY_USER: &str = include_str!("queries/get_forecasts_by_user.sql");
 const GET_FORECASTS_BY_TIME: &str = include_str!("queries/get_forecasts_by_time.sql");
 
 #[derive(Debug, Error)]
@@ -170,6 +172,21 @@ impl Repo {
         Ok(Self::row_to_forecast(row))
     }
 
+    pub async fn get_forecasts_by_user(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<Vec<Forecast>, BotDbError> {
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let connection = self.pool.get().await?;
+        let vec = connection
+            .query(GET_FORECASTS_BY_USER, &[chat_id, &bytes])
+            .await?;
+
+        Ok(vec.into_iter().map(Self::row_to_forecast).collect())
+    }
+
     pub async fn get_forecasts_by_time(&self) -> Result<Vec<Forecast>, BotDbError> {
         let connection = self.pool.get().await?;
         let vec = connection
@@ -263,7 +280,7 @@ impl Repo {
 
         match connection
             .query_one(
-                UPDATE_FORECAST,
+                UPDATE_FORECAST_BY_USER,
                 &[chat_id, &bytes, city_id, &Utc::now(), &next_delivery_at],
             )
             .await
@@ -274,6 +291,22 @@ impl Repo {
                     .await
             }
         }
+    }
+
+    pub async fn update_forecast(
+        &self,
+        forecast_id: &i32,
+        cron_expression: String,
+        next_delivery_at: DateTime<Utc>,
+    ) -> Result<u64, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        Ok(connection
+            .execute(
+                UPDATE_FORECAST,
+                &[forecast_id, &cron_expression, &next_delivery_at],
+            )
+            .await?)
     }
 
     pub async fn check_cities_exist(&self) -> Result<u64, BotDbError> {

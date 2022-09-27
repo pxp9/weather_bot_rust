@@ -41,6 +41,7 @@ pub enum Command {
     CurrentDefaultCity,
     CurrentOffset,
     UnSchedule,
+    SetOffset,
     UnknownCommand(String),
 }
 
@@ -69,6 +70,7 @@ impl FromStr for Command {
             "/cancel" => Command::Cancel,
             "/schedule" => Command::Schedule,
             "/unschedule" => Command::UnSchedule,
+            "/set_offset" => Command::SetOffset,
             "/current_default_city" => Command::CurrentDefaultCity,
             "/current_offset" => Command::CurrentOffset,
             _ => Command::UnknownCommand(command_str.to_string()),
@@ -224,6 +226,10 @@ impl UpdateProcessor {
                 self.schedule_weather().await?;
                 Ok(None)
             }
+            Command::SetOffset => {
+                self.set_offset().await?;
+                Ok(None)
+            }
             Command::UnSchedule => self.unschedule().await,
             _ => {
                 self.unknown_command().await?;
@@ -371,6 +377,8 @@ impl UpdateProcessor {
     ) -> Result<(), BotError> {
         let hour_utc = if user_hour - offset < 0 {
             user_hour - offset + 24
+        } else if user_hour - offset > 24 {
+            user_hour - offset - 24
         } else {
             user_hour - offset
         };
@@ -418,22 +426,68 @@ impl UpdateProcessor {
                     .modify_offset(&self.chat.id, self.chat.user_id, offset)
                     .await?;
 
-                // we have city_id , hour and minutes well formatted stored in selected see in process_time func.
-                let vec: Vec<&str> = self.chat.selected.as_ref().unwrap().split(',').collect();
-                // This unwraps are safe because we know that is stored in the correct format.
-                let city_id = vec[0].parse::<i32>().unwrap();
+                self.rechedule(offset).await?;
 
-                let time: Vec<&str> = vec[1].split(':').collect();
-                let user_hour = time[0].parse::<i8>().unwrap();
-                let minutes = time[1].parse::<i8>().unwrap();
+                let text = format!("Your offset was set to {}", offset);
 
-                self.schedule_forecast(offset, city_id, user_hour, minutes)
-                    .await?;
-                Ok(())
+                self.send_message(&text).await?;
+
+                self.return_to_initial().await
             }
 
             Err(_) => self.not_valid_offset_message().await,
         }
+    }
+
+    async fn rechedule(&self, new_offset: i8) -> Result<(), BotError> {
+        let forecasts = self
+            .repo
+            .get_forecasts_by_user(&self.chat.id, self.chat.user_id)
+            .await?;
+
+        // If user has not forecasts this loop wont be executed.
+        for forecast in forecasts.into_iter() {
+            // previous offset it is fetched
+            let previous_offset: i8 = match self.chat.offset {
+                None => 0,
+                Some(offset) => offset,
+            };
+
+            // get the time of the forecast with cron_expression and previous offset
+            // 0 {} {} * * * *
+            let old_cron_expression = forecast.cron_expression;
+            let vec: Vec<&str> = old_cron_expression.split(' ').collect();
+            let minutes_utc = vec[1].parse::<i8>().unwrap();
+            let old_hour_utc = vec[2].parse::<i8>().unwrap();
+
+            let user_hour = if old_hour_utc + previous_offset > 24 {
+                old_hour_utc + previous_offset - 24
+            } else if old_hour_utc + previous_offset < 0 {
+                old_hour_utc + previous_offset + 24
+            } else {
+                old_hour_utc + previous_offset
+            };
+
+            // Make the new cron_expression
+
+            let hour_utc = if user_hour - new_offset < 0 {
+                user_hour - new_offset + 24
+            } else if user_hour - new_offset > 24 {
+                user_hour - new_offset - 24
+            } else {
+                user_hour - new_offset
+            };
+
+            let new_cron_expression = format!("0 {} {} * * * *", minutes_utc, hour_utc);
+
+            // Update forecast
+            let next_delivery = Repo::calculate_next_delivery(&new_cron_expression)?;
+            self.repo
+                .update_forecast(&forecast.id, new_cron_expression, next_delivery)
+                .await?;
+        }
+
+        Ok(())
     }
 
     async fn not_time_message(&self) -> Result<(), BotError> {
@@ -475,42 +529,13 @@ impl UpdateProcessor {
             Ok(number) => number,
         };
 
-        // In selected we have city_id captured in scheduled_city_number func
-
-        match self.chat.offset {
-            Some(offset) => {
-                self.schedule_forecast(
-                    offset,
-                    self.chat.selected.as_ref().unwrap().parse::<i32>().unwrap(),
-                    hour,
-                    minutes,
-                )
-                .await?;
-            }
-            None => {
-                self.repo
-                    .modify_selected(
-                        &self.chat.id,
-                        self.chat.user_id,
-                        format!(
-                            "{},{}:{}",
-                            self.chat.selected.as_ref().unwrap(),
-                            hour,
-                            minutes
-                        ),
-                    )
-                    .await?;
-
-                self.repo
-                    .modify_state(&self.chat.id, self.chat.user_id, ClientState::Offset)
-                    .await?;
-
-                let text = "Do you have any offset respect UTC ?\n 
-                (0 if your timezone is the same as UTC, 2 if UTC + 2 , -2 if UTC - 2, [-11,12])";
-
-                self.send_message(text).await?;
-            }
-        }
+        self.schedule_forecast(
+            self.chat.offset.unwrap(),
+            self.chat.selected.as_ref().unwrap().parse::<i32>().unwrap(),
+            hour,
+            minutes,
+        )
+        .await?;
 
         Ok(())
     }
@@ -589,11 +614,33 @@ impl UpdateProcessor {
     }
 
     async fn schedule_weather(&self) -> Result<(), BotError> {
+        match self.chat.offset {
+            None => {
+                // Just send message because it is in Initial state.
+                self.send_message(
+                    "Your can not schedule without offset set. Please execute /set_offset",
+                )
+                .await
+            }
+            Some(_) => {
+                self.repo
+                    .modify_state(&self.chat.id, self.chat.user_id, ClientState::ScheduleCity)
+                    .await?;
+
+                self.schedule_weather_message().await
+            }
+        }
+    }
+
+    async fn set_offset(&self) -> Result<(), BotError> {
         self.repo
-            .modify_state(&self.chat.id, self.chat.user_id, ClientState::ScheduleCity)
+            .modify_state(&self.chat.id, self.chat.user_id, ClientState::Offset)
             .await?;
 
-        self.schedule_weather_message().await
+        let text = "Do you have any offset respect UTC ?\n 
+                (0 if your timezone is the same as UTC, 2 if UTC + 2 , -2 if UTC - 2, [-11,12])";
+
+        self.send_message(text).await
     }
 
     async fn set_city(&self) -> Result<(), BotError> {
