@@ -448,10 +448,7 @@ impl UpdateProcessor {
         // If user has not forecasts this loop wont be executed.
         for forecast in forecasts.into_iter() {
             // previous offset it is fetched
-            let previous_offset: i8 = match self.chat.offset {
-                None => 0,
-                Some(offset) => offset,
-            };
+            let previous_offset: i8 = self.chat.offset.unwrap_or(0);
 
             // get the time of the forecast with cron_expression and previous offset
             // 0 {} {} * * * *
