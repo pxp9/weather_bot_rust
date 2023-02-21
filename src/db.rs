@@ -7,8 +7,13 @@ use bb8_postgres::bb8::RunError;
 use bb8_postgres::tokio_postgres::tls::NoTls;
 use bb8_postgres::tokio_postgres::Row;
 use bb8_postgres::PostgresConnectionManager;
+use cron::Schedule;
+use fang::DateTime;
+use fang::FangError;
+use fang::Utc;
 use postgres_types::{FromSql, ToSql};
 use std::include_str;
+use std::str::FromStr;
 use thiserror::Error;
 use tokio::sync::OnceCell;
 use typed_builder::TypedBuilder;
@@ -16,18 +21,25 @@ use typed_builder::TypedBuilder;
 static REPO: OnceCell<Repo> = OnceCell::const_new();
 
 const DELETE_CLIENT: &str = include_str!("queries/delete_client.sql");
+const DELETE_FORECASTS: &str = include_str!("queries/delete_forecasts.sql");
 const GET_CITY_BY_PATTERN: &str = include_str!("queries/get_city_by_pattern.sql");
 const INSERT_CLIENT: &str = include_str!("queries/insert_client.sql");
 const INSERT_CITY: &str = include_str!("queries/insert_city.sql");
+const INSERT_FORECAST: &str = include_str!("queries/insert_forecast.sql");
+const UPDATE_FORECAST: &str = include_str!("queries/update_forecast.sql");
+const UPDATE_FORECAST_BY_USER: &str = include_str!("queries/update_forecast_by_user.sql");
 const CHECK_USER_EXISTS: &str = include_str!("queries/check_user_exists.sql");
 const CHECK_CITIES_EXIST: &str = include_str!("queries/check_cities_exist.sql");
 const MODIFY_CITY: &str = include_str!("queries/modify_city.sql");
-const MODIFY_BEFORE_STATE: &str = include_str!("queries/modify_before_state.sql");
+const MODIFY_OFFSET: &str = include_str!("queries/modify_offset.sql");
 const MODIFY_SELECTED: &str = include_str!("queries/modify_selected.sql");
 const MODIFY_STATE: &str = include_str!("queries/modify_state.sql");
 const SEARCH_CITY: &str = include_str!("queries/search_city.sql");
 const SEARCH_CITY_BY_ID: &str = include_str!("queries/search_city_by_id.sql");
 const GET_CHAT: &str = include_str!("queries/get_chat.sql");
+const GET_FORECAST: &str = include_str!("queries/get_forecast.sql");
+const GET_FORECASTS_BY_USER: &str = include_str!("queries/get_forecasts_by_user.sql");
+const GET_FORECASTS_BY_TIME: &str = include_str!("queries/get_forecasts_by_time.sql");
 
 #[derive(Debug, Error)]
 pub enum BotDbError {
@@ -35,8 +47,19 @@ pub enum BotDbError {
     PoolError(#[from] RunError<bb8_postgres::tokio_postgres::Error>),
     #[error(transparent)]
     PgError(#[from] bb8_postgres::tokio_postgres::Error),
+    #[error(transparent)]
+    CronError(#[from] cron::error::Error),
     #[error("City not found")]
     CityNotFoundError,
+    #[error("No timestamps that match with this cron expression")]
+    NoTimestampsError,
+}
+
+impl From<BotDbError> for FangError {
+    fn from(error: BotDbError) -> Self {
+        let description = format!("{:?}", error);
+        FangError { description }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, ToSql, FromSql)]
@@ -46,10 +69,20 @@ pub enum ClientState {
     Initial,
     #[postgres(name = "find_city")]
     FindCity,
-    #[postgres(name = "number")]
-    Number,
+    #[postgres(name = "find_city_number")]
+    FindCityNumber,
+    #[postgres(name = "schedule_city")]
+    ScheduleCity,
+    #[postgres(name = "schedule_city_number")]
+    ScheduleCityNumber,
+    #[postgres(name = "set_city_number")]
+    SetCityNumber,
     #[postgres(name = "set_city")]
     SetCity,
+    #[postgres(name = "time")]
+    Time,
+    #[postgres(name = "offset")]
+    Offset,
 }
 
 #[derive(Debug, Clone)]
@@ -62,9 +95,22 @@ pub struct Chat {
     pub id: i64,
     pub user_id: u64,
     pub state: ClientState,
-    pub before_state: ClientState,
+    pub offset: Option<i8>,
     pub selected: Option<String>,
     pub default_city_id: Option<i32>,
+}
+
+#[derive(Debug, Clone, TypedBuilder)]
+pub struct Forecast {
+    pub id: i32,
+    pub chat_id: i64,
+    pub user_id: u64,
+    pub city_id: i32,
+    pub cron_expression: String,
+    pub last_delivered_at: Option<DateTime<Utc>>,
+    pub next_delivery_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 }
 
 impl Repo {
@@ -108,6 +154,159 @@ impl Repo {
 
             Ok(chat)
         }
+    }
+
+    pub async fn get_forecast(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        city_id: &i32,
+    ) -> Result<Forecast, BotDbError> {
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let connection = self.pool.get().await?;
+        let row = connection
+            .query_one(GET_FORECAST, &[chat_id, &bytes, city_id])
+            .await?;
+
+        Ok(Self::row_to_forecast(row))
+    }
+
+    pub async fn get_forecasts_by_user(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<Vec<Forecast>, BotDbError> {
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let connection = self.pool.get().await?;
+        let vec = connection
+            .query(GET_FORECASTS_BY_USER, &[chat_id, &bytes])
+            .await?;
+
+        Ok(vec.into_iter().map(Self::row_to_forecast).collect())
+    }
+
+    pub async fn get_forecasts_by_time(&self) -> Result<Vec<Forecast>, BotDbError> {
+        let connection = self.pool.get().await?;
+        let vec = connection
+            .query(GET_FORECASTS_BY_TIME, &[&Utc::now()])
+            .await?;
+
+        Ok(vec.into_iter().map(Self::row_to_forecast).collect())
+    }
+
+    fn bytes_to_u64(bytes: &[u8]) -> u64 {
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(bytes);
+        Self::as_u64_le(&arr)
+    }
+
+    pub fn calculate_next_delivery(cron_expression: &str) -> Result<DateTime<Utc>, BotDbError> {
+        let schedule = Schedule::from_str(cron_expression)?;
+        let mut iterator = schedule.upcoming(Utc);
+
+        iterator.next().ok_or(BotDbError::NoTimestampsError)
+    }
+
+    fn as_u64_le(array: &[u8; 8]) -> u64 {
+        (array[0] as u64)
+            + ((array[1] as u64) << 8)
+            + ((array[2] as u64) << 16)
+            + ((array[3] as u64) << 24)
+            + ((array[4] as u64) << 32)
+            + ((array[5] as u64) << 40)
+            + ((array[6] as u64) << 48)
+            + ((array[7] as u64) << 56)
+    }
+
+    pub async fn insert_forecast(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        city_id: &i32,
+        cron_expression: String,
+    ) -> Result<Forecast, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let next_delivery_at = Self::calculate_next_delivery(&cron_expression)?;
+
+        let row = connection
+            .query_one(
+                INSERT_FORECAST,
+                &[
+                    chat_id,
+                    &bytes,
+                    city_id,
+                    &cron_expression,
+                    &next_delivery_at,
+                    &Utc::now(),
+                ],
+            )
+            .await?;
+
+        Ok(Self::row_to_forecast(row))
+    }
+
+    fn row_to_forecast(row: Row) -> Forecast {
+        let user_id = Self::bytes_to_u64(row.get("user_id"));
+
+        Forecast::builder()
+            .id(row.get("id"))
+            .chat_id(row.get("chat_id"))
+            .user_id(user_id)
+            .city_id(row.get("city_id"))
+            .last_delivered_at(row.try_get("last_delivered_at").ok())
+            .next_delivery_at(row.get("next_delivery_at"))
+            .updated_at(row.get("updated_at"))
+            .created_at(row.get("created_at"))
+            .cron_expression(row.get("cron_expression"))
+            .build()
+    }
+
+    pub async fn update_or_insert_forecast(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        city_id: &i32,
+        cron_expression: String,
+        next_delivery_at: DateTime<Utc>,
+    ) -> Result<Forecast, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        match connection
+            .query_one(
+                UPDATE_FORECAST_BY_USER,
+                &[chat_id, &bytes, city_id, &Utc::now(), &next_delivery_at],
+            )
+            .await
+        {
+            Ok(row) => Ok(Self::row_to_forecast(row)),
+            Err(_) => {
+                self.insert_forecast(chat_id, user_id, city_id, cron_expression)
+                    .await
+            }
+        }
+    }
+
+    pub async fn update_forecast(
+        &self,
+        forecast_id: &i32,
+        cron_expression: String,
+        next_delivery_at: DateTime<Utc>,
+    ) -> Result<u64, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        Ok(connection
+            .execute(
+                UPDATE_FORECAST,
+                &[forecast_id, &cron_expression, &next_delivery_at],
+            )
+            .await?)
     }
 
     pub async fn check_cities_exist(&self) -> Result<u64, BotDbError> {
@@ -170,13 +369,24 @@ impl Repo {
 
         let row = connection.query_one(GET_CHAT, &[chat_id, &bytes]).await?;
 
+        let offset_bytes = row.try_get("offset").ok();
+
+        let offset: Option<i8> = match offset_bytes {
+            Some(bytes) => {
+                let mut arr = [0u8; 1];
+                arr.copy_from_slice(bytes);
+                Some(i8::from_le_bytes(arr))
+            }
+            None => None,
+        };
+
         let chat = Chat::builder()
-            .id(row.get("id"))
+            .id(*chat_id)
             .user_id(user_id)
             .state(row.get("state"))
-            .before_state(row.get("before_state"))
             .selected(row.try_get("selected").ok())
             .default_city_id(row.try_get("default_city_id").ok())
+            .offset(offset)
             .build();
 
         Ok(chat)
@@ -188,15 +398,7 @@ impl Repo {
         let bytes = user_id.to_le_bytes().to_vec();
 
         let n = connection
-            .execute(
-                INSERT_CLIENT,
-                &[
-                    chat_id,
-                    &ClientState::Initial,
-                    &ClientState::Initial,
-                    &bytes,
-                ],
-            )
+            .execute(INSERT_CLIENT, &[chat_id, &ClientState::Initial, &bytes])
             .await?;
         Ok(n)
     }
@@ -210,6 +412,22 @@ impl Repo {
             .execute(DELETE_CLIENT, &[chat_id, &bytes])
             .await?;
         Ok(n)
+    }
+
+    pub async fn delete_forecasts(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+    ) -> Result<Vec<Forecast>, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let vec: Vec<Row> = connection
+            .query(DELETE_FORECASTS, &[chat_id, &bytes])
+            .await?;
+
+        Ok(vec.into_iter().map(Self::row_to_forecast).collect())
     }
 
     pub async fn modify_state(
@@ -228,23 +446,6 @@ impl Repo {
         Ok(n)
     }
 
-    pub async fn modify_before_state(
-        &self,
-        chat_id: &i64,
-        user_id: u64,
-        new_state: ClientState,
-    ) -> Result<u64, BotDbError> {
-        let connection = self.pool.get().await?;
-
-        let bytes = user_id.to_le_bytes().to_vec();
-
-        let n = connection
-            .execute(MODIFY_BEFORE_STATE, &[&new_state, chat_id, &bytes])
-            .await?;
-
-        Ok(n)
-    }
-
     pub async fn modify_default_city(
         &self,
         chat_id: &i64,
@@ -257,6 +458,25 @@ impl Repo {
 
         let n = connection
             .execute(MODIFY_CITY, &[&city_id, chat_id, &bytes])
+            .await?;
+
+        Ok(n)
+    }
+
+    pub async fn modify_offset(
+        &self,
+        chat_id: &i64,
+        user_id: u64,
+        offset: i8,
+    ) -> Result<u64, BotDbError> {
+        let connection = self.pool.get().await?;
+
+        let offset_bytes = offset.to_le_bytes();
+
+        let bytes = user_id.to_le_bytes().to_vec();
+
+        let n = connection
+            .execute(MODIFY_OFFSET, &[&offset_bytes.as_slice(), chat_id, &bytes])
             .await?;
 
         Ok(n)
@@ -337,7 +557,7 @@ mod db_test {
         let bytes: &[u8] = row.get("user_id");
         let mut arr = [0u8; 8];
         arr.copy_from_slice(bytes);
-        let user_id = as_u64_le(&arr);
+        let user_id = Repo::as_u64_le(&arr);
 
         // testing modify state
 
@@ -365,15 +585,5 @@ mod db_test {
 
         let n = db_controller.delete_client(&111111, 1111111).await.unwrap();
         assert_eq!(n, 1_u64);
-    }
-    fn as_u64_le(array: &[u8; 8]) -> u64 {
-        (array[0] as u64)
-            + ((array[1] as u64) << 8)
-            + ((array[2] as u64) << 16)
-            + ((array[3] as u64) << 24)
-            + ((array[4] as u64) << 32)
-            + ((array[5] as u64) << 40)
-            + ((array[6] as u64) << 48)
-            + ((array[7] as u64) << 56)
     }
 }

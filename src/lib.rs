@@ -1,5 +1,6 @@
 pub mod command;
 pub mod db;
+pub mod deliver;
 pub mod open_weather_map;
 pub mod seeds;
 pub mod telegram;
@@ -7,6 +8,7 @@ pub mod workers;
 
 use crate::db::BotDbError;
 use crate::open_weather_map::client::ClientError;
+use crate::telegram::client::ApiError;
 use lazy_static::lazy_static;
 use thiserror::Error;
 
@@ -26,7 +28,7 @@ pub enum BotError {
     #[error("Update can not be processed {}", self)]
     UpdateNotMessage(String),
     #[error(transparent)]
-    TelegramError(#[from] frankenstein::Error),
+    TelegramError(#[from] ApiError),
     #[error(transparent)]
     DbError(#[from] BotDbError),
     #[error(transparent)]

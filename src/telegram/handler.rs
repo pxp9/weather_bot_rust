@@ -42,7 +42,6 @@ impl Handler {
         let mut queue: AsyncQueue<NoTls> = AsyncQueue::builder()
             .uri(DATABASE_URL.clone())
             .max_pool_size(1_u32)
-            .duplicated_tasks(true)
             .build();
 
         queue.connect(NoTls).await.unwrap();
