@@ -25,4 +25,4 @@ compose:
 		mkdir "db-data"; \
 	fi
 	echo "Docker compose";
-	docker compose up
+	docker compose up -d
