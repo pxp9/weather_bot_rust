@@ -76,7 +76,7 @@ impl WeatherApiClient {
         let string_response = response.text()?;
 
         if status_code == 200 {
-            let json_result: WeatherForecast = serde_json::from_str(&string_response).unwrap();
+            let json_result: WeatherForecast = serde_json::from_str(&string_response)?;
             return Ok(json_result);
         };
 

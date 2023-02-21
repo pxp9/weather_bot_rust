@@ -323,6 +323,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cron"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ff76b51e4c068c52bfd2866e1567bee7c567ae8f24ada09fd4307019e25eab7"
+dependencies = [
+ "chrono",
+ "nom",
+ "once_cell",
+]
+
+[[package]]
 name = "crossbeam-deque"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -474,14 +485,15 @@ checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
 
 [[package]]
 name = "fang"
-version = "0.9.1"
-source = "git+https://github.com/ayrat555/fang.git#19598d63cbffb5e46ad5b8f00111a6fbd6551e2c"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ab16066604d227db39c44e33e54f619b2b9887d076e3b4737b1588fd57612df"
 dependencies = [
  "async-recursion",
  "async-trait",
  "bb8-postgres 0.8.1",
  "chrono",
- "cron",
+ "cron 0.12.0",
  "hex",
  "log",
  "postgres-types",
@@ -491,7 +503,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "tokio 1.21.1",
- "typed-builder",
+ "typed-builder 0.12.0",
  "typetag",
  "uuid 1.1.2",
 ]
@@ -557,7 +569,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio 1.21.1",
- "typed-builder",
+ "typed-builder 0.10.0",
 ]
 
 [[package]]
@@ -2396,6 +2408,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-builder"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6179333b981641242a768f30f371c9baccbfcc03749627000c500ab88bf4528b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "typenum"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2623,7 +2646,7 @@ name = "weather_bot_rust"
 version = "0.2.0"
 dependencies = [
  "bb8-postgres 0.7.0",
- "cron",
+ "cron 0.11.0",
  "fang",
  "frankenstein",
  "lazy_static",
@@ -2635,7 +2658,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio 1.21.1",
- "typed-builder",
+ "typed-builder 0.10.0",
 ]
 
 [[package]]
