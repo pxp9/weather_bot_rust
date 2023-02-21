@@ -1,7 +1,7 @@
 ####################################################################################################
 ## Builder
 ####################################################################################################
-FROM rust:1.63.0-bullseye AS builder
+FROM rust:1.67.0-bullseye AS builder
 RUN apt update && apt install -y libssl-dev pkg-config libz-dev libcurl4 postgresql
 RUN update-ca-certificates
 
@@ -21,6 +21,10 @@ RUN adduser \
 WORKDIR /bot
 
 COPY ./ .
+
+RUN cargo install cargo-cache
+
+RUN cargo cache -a
 
 RUN cargo install diesel_cli --no-default-features --features postgres
 
