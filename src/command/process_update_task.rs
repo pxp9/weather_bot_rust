@@ -123,6 +123,12 @@ impl UpdateProcessor {
     }
 
     pub async fn process(&self) -> Result<Option<Vec<Forecast>>, BotError> {
+        if self.chat.state == ClientState::Initial
+            && matches!(self.command, Command::UnknownCommand(_))
+        {
+            return Ok(None);
+        }
+
         self.send_typing().await?;
 
         if Command::Cancel == self.command {
@@ -231,10 +237,7 @@ impl UpdateProcessor {
                 Ok(None)
             }
             Command::UnSchedule => self.unschedule().await,
-            _ => {
-                self.unknown_command().await?;
-                Ok(None)
-            }
+            _ => Ok(None),
         }
     }
 
@@ -582,7 +585,7 @@ impl UpdateProcessor {
         self.cancel(None).await
     }
 
-    async fn unknown_command(&self) -> Result<(), BotError> {
+    async fn _unknown_command(&self) -> Result<(), BotError> {
         self.cancel(Some(
             "Unknown command. See /start for available commands".to_string(),
         ))

@@ -3,7 +3,7 @@ db:
   -e POSTGRES_DB=weather_bot \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
-  postgres:latest
+  postgres:14.5
 
 run:
 	RUST_LOG=info DATABASE_URL=postgres://postgres:postgres@localhost/weather_bot cargo run
